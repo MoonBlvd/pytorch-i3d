@@ -116,7 +116,6 @@ class Charades(data_utl.Dataset):
             imgs = load_flow_frames(self.root, vid, 1, nf)
 
         imgs = self.transforms(imgs)
-
         return video_to_tensor(imgs), torch.from_numpy(label), vid
 
     def __len__(self):
