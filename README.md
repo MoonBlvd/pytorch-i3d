@@ -1,6 +1,5 @@
 # I3D models trained on Kinetics
 
-
 ## Overview
 
 This repository contains trained models reported in the paper "[Quo Vadis,
