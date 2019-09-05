@@ -30,7 +30,6 @@ def run(max_steps=64e3,
         batch_size=1, 
         load_model='', 
         save_dir=''):
-    num_classes = 100
     # setup dataset
     # test_transforms = T.Compose([videotransforms.CenterCrop(224)])
     test_transforms = T.Compose([T.Resize(min_size=(240,), max_size=320),
@@ -69,10 +68,10 @@ def run(max_steps=64e3,
 
     # setup the model
     if mode == 'flow':
-        i3d = InceptionI3d(num_classes, in_channels=2)
+        i3d = InceptionI3d(dataset.num_classes, in_channels=2)
     else:
-        i3d = InceptionI3d(num_classes, in_channels=3)
-    i3d.replace_logits(157)
+        i3d = InceptionI3d(dataset.num_classes, in_channels=3)
+    i3d.replace_logits(dataset.num_classes)
     load_state_dict(i3d, torch.load(load_model), ignored_prefix='logits')
     i3d.cuda()
 
@@ -86,9 +85,10 @@ def run(max_steps=64e3,
         # Iterate over data.
         for data in dataloaders[phase]:
             # get the inputs
-            inputs, labels, name = data
-            if os.path.exists(os.path.join(save_dir, name[0]+'.npy')):
-                continue
+            inputs, labels, name, start, end = data
+            feature_save_dir = os.path.join(save_dir, name[0])
+            if not os.path.exists(feature_save_dir):
+                os.makedirs(feature_save_dir)
 
             b,c,t,h,w = inputs.shape
             if t > 1600:
@@ -102,10 +102,9 @@ def run(max_steps=64e3,
             else:
                 # wrap them in Variable
                 inputs = Variable(inputs.cuda(), volatile=True)
-                
-                features = i3d.extract_features(inputs)                
-                np.save(os.path.join(save_dir, name[0]), 
-                        features.squeeze(0).permute(1,2,3,0).data.cpu().numpy())
+                features = i3d.extract_features(inputs)
+                np.save(os.path.join(feature_save_dir, str(int(start)) + '_' + str(int(end)) + '.npy'), features.squeeze().data.cpu().numpy())
+                        # features.squeeze(0).permute(1,2,3,0).data.cpu().numpy())
 
 
 if __name__ == '__main__':

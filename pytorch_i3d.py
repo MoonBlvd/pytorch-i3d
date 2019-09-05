@@ -327,7 +327,6 @@ class InceptionI3d(nn.Module):
         x = self.logits(self.dropout(self.avg_pool(x)))
         if self._spatial_squeeze:
             logits = x.squeeze(3).squeeze(3)
-
         # logits is batch X time X classes, which is what we want to work with
         return logits
         
@@ -336,5 +335,4 @@ class InceptionI3d(nn.Module):
         for end_point in self.VALID_ENDPOINTS:
             if end_point in self.end_points:
                 x = self._modules[end_point](x)
-        pdb.set_trace()
         return self.avg_pool(x)

@@ -31,7 +31,6 @@ class A3D(data_utl.Dataset):
     '''
     def __init__(self, split_file, split, root, mode, transforms=None, save_dir=''):
         
-        
         self.split_file = split_file
         self.transforms = transforms
         self.mode = mode
@@ -40,24 +39,37 @@ class A3D(data_utl.Dataset):
         self.seq_len = 16
         self.overlap = 0
         self.fps = 10
-        self.data = self.make_dataset(split_file, split, root, mode)
+        self.num_classes = 11
 
-    def make_dataset(self, split_file, split, root, mode, num_classes=157):
+        self.data = self.make_dataset(split_file, split, root, mode)
+        
+
+    def make_dataset(self, split_file, split, root, mode):
         dataset = []
         with open(split_file, 'r') as f:
             data = json.load(f)
 
         for vid in data.keys():
+            if not data[vid]['video_start']:
+                # NOTE: Sep 5, Some videos may have null video_start, meaning there is a bug and we skip the video for now
+                continue
             if data[vid]['subset'] != split:
                 continue
             if not os.path.exists(os.path.join(root, vid)):
                 continue
 
             num_frames = data[vid]['num_frames']
-            labels = np.zeros(num_frames, np.float32)        
-            labels[data[vid]['anomaly_start']-1:data[vid]['anomaly_end']-1] = 1 # binary classification
+            # init label
+            labels = np.zeros([self.num_classes, num_frames], np.float32)        
+            # normal label
+            labels[0, :data[vid]['anomaly_start']] = 1
+            # anomaly label
+            labels[int(data[vid]['anomaly_class']), 
+                   data[vid]['anomaly_start']:data[vid]['anomaly_end']] = 1 # binary classification
+            # normal label
+            labels[0, data[vid]['anomaly_end']:] = 1
 
-            for t in range(0, num_frames, (self.seq_len-self.overlap)):
+            for t in range(0, num_frames, (self.seq_len - self.overlap)):
                 if num_frames - t < self.seq_len:
                     seq_start = num_frames - self.seq_len
                     seq_end = num_frames
@@ -66,11 +78,11 @@ class A3D(data_utl.Dataset):
                     seq_end = t + self.seq_len
 
                 dataset.append({"vid": vid, 
-                                "label": labels[seq_start: seq_end], 
-                                "start": seq_start + 1, # NOTE: convert from 0-index to 1-index
-                                "end": seq_end + 1, 
+                                "label": labels[:, seq_start: seq_end], 
+                                "start": seq_start, # NOTE: 0-index
+                                "end": seq_end# NOTE: 0-index
+                                # "image_dir": 
                                 })
-            
             
             # if mode == 'flow':
             #     num_frames = num_frames//2
@@ -131,8 +143,7 @@ class A3D(data_utl.Dataset):
             imgs = self.load_rgb_frames(self.root, vid, start, end)
         else:
             imgs = self.load_flow_frames(self.root, vid, start, end)
-
-        return imgs, torch.from_numpy(label), vid
+        return imgs, torch.from_numpy(label), vid, start, end
 
     def __len__(self):
         return len(self.data)
