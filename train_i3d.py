@@ -88,6 +88,7 @@ def do_train(i3d, train_dataloader, val_dataloader, checkpoint_peroid=1000, save
                 tot_loss = tot_loc_loss = tot_cls_loss = 0.
             
             if steps % checkpoint_peroid == 0:
+                del inputs, loss
                 do_val(i3d, val_dataloader)
                 i3d.train()
                 save_dir = os.path.join(save_model, str(steps).zfill(6)+'.pt')
