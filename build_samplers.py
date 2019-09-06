@@ -13,7 +13,7 @@ def make_data_sampler(dataset, shuffle, distributed):
 def make_batch_data_sampler(dataset,
                             sampler,
                             aspect_grouping,
-                            segments_per_gpu,
+                            batch_per_gpu,
                             max_iters=None,
                             start_iter=0,
                             dataset_name=None):
@@ -23,10 +23,10 @@ def make_batch_data_sampler(dataset,
         aspect_ratios = _compute_aspect_ratios(dataset, dataset_name=dataset_name)
         group_ids = _quantize(aspect_ratios, aspect_grouping)
         batch_sampler = samplers.GroupedBatchSampler(
-            sampler, group_ids, segments_per_gpu, drop_uneven=False)
+            sampler, group_ids, batch_per_gpu, drop_uneven=False)
     else:
         batch_sampler = torch.utils.data.sampler.BatchSampler(
-            sampler, segments_per_gpu, drop_last=False)
+            sampler, batch_per_gpu, drop_last=False)
     if max_iters is not None:
         batch_sampler = samplers.IterationBasedBatchSampler(batch_sampler, max_iters, start_iter)
     return batch_sampler

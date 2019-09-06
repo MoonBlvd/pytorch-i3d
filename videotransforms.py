@@ -4,15 +4,16 @@ import numpy as np
 import numbers
 import random
 from torchvision.transforms import functional as F
+from PIL import Image
 import pdb
 class Compose(object):
     def __init__(self, transforms):
         self.transforms = transforms
 
-    def __call__(self, image):
+    def __call__(self, image, labels):
         for t in self.transforms:
-            image = t(image)
-        return image
+            image, labels = t(image, labels)
+        return image, labels
 
     def __repr__(self):
         format_string = self.__class__.__name__ + "("
@@ -52,10 +53,16 @@ class Resize(object):
 
         return (oh, ow)
 
-    def __call__(self, image):
-        size = self.get_size(image.size)
-        image = F.resize(image, size)
-        return image
+    def __call__(self, images, labels):
+        '''
+        images: a list of PIL Image object 
+
+        '''
+        size = self.get_size(images[0].size)
+        for i, img in enumerate(images):
+            images[i] = F.resize(img, size)
+
+        return images, labels
 
     def __str__(self):
         return 'Resize(): Min {} | Max {}'.format(self.min_size, self.max_size)
@@ -66,16 +73,21 @@ class Normalize(object):
         self.std = std
         self.to_bgr255 = to_bgr255
 
-    def __call__(self, image):
+    def __call__(self, image, labels):
         if self.to_bgr255:
             image = image[[2, 1, 0]] * 255
         # image = F.normalize(image, mean=self.mean, std=self.std)
         image = image*2 - 1
-        return image
+        return image, labels
 
 class ToTensor(object):
-    def __call__(self, image):
-        return F.to_tensor(image)
+    def __call__(self, images, labels):
+        '''
+        images: list(PIL.Image)
+        '''
+        for i, img in enumerate(images):
+            images[i] = F.to_tensor(img)
+        return torch.stack(images, dim=1), torch.from_numpy(labels)
 
 class RandomCrop(object):
     """Crop the given video sequences (t x h x w) at a random location.
@@ -161,17 +173,24 @@ class RandomHorizontalFlip(object):
     def __init__(self, p=0.5):
         self.p = p
 
-    def __call__(self, imgs):
+    def __call__(self, images, labels):
         """
         Args:
-            img (seq Images): seq Images to be flipped.
+            images (seq Images): list(PIL.Image)
         Returns:
             seq Images: Randomly flipped seq images.
         """
         if random.random() < self.p:
-            # t x h x w
-            return np.flip(imgs, axis=2).copy()
-        return imgs
+            # 8 - leave_to_right, 9 - leave_to_left
+            for t in range(labels.shape[1]):
+                if np.argmax(labels[:, t]) == 8:
+                    labels[8, t] = 0
+                    labels[9, t] = 1
+                elif np.argmax(labels[:, t]) == 9:
+                    labels[9, t] = 0
+                    labels[8, t] = 1
+            return [img.transpose(Image.FLIP_LEFT_RIGHT) for img in images], labels
+        return images, labels
 
     def __repr__(self):
         return self.__class__.__name__ + '(p={})'.format(self.p)

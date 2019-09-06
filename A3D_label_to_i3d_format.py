@@ -16,6 +16,7 @@ import os
 import json
 import argparse
 import glob 
+import numpy as np
 
 import pdb
 
@@ -39,7 +40,12 @@ for anno_file in all_A3D_anno_files:
     anno_for_i3d[key]['anomaly_end'] = anno['anomaly_end']
     anno_for_i3d[key]['anomaly_class'] = anno['accident_id']
     anno_for_i3d[key]['num_frames'] = anno['num_frames']
-    anno_for_i3d[key]['subset'] = 'training'
+
+    # NOTE: Sep 6th, split the train and validation randomly for now, will be changed later!!
+    if np.random.rand(1) < 3/4:
+        anno_for_i3d[key]['subset'] = 'train'
+    else:
+        anno_for_i3d[key]['subset'] = 'val'
 
 json.dump(anno_for_i3d, open(args.save_name, 'w'), indent=2)
     

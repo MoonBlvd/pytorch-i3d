@@ -29,7 +29,7 @@ class A3D(data_utl.Dataset):
     '''
     A3D dataset for I3D
     '''
-    def __init__(self, split_file, split, root, mode, transforms=None, save_dir=''):
+    def __init__(self, split_file, split, root, mode, transforms=None, horizontal_flip=None, save_dir=''):
         
         self.split_file = split_file
         self.transforms = transforms
@@ -99,9 +99,8 @@ class A3D(data_utl.Dataset):
             #     sc = 1+d/min(w,h)
             #     img = cv2.resize(img,dsize=(0,0),fx=sc,fy=sc)
             # img = (img/255.)*2 - 1
-            img = self.transforms(img)
             frames.append(img)
-        return torch.stack(frames, dim=1)
+        return frames #torch.stack(frames, dim=1)
 
     # def load_flow_frames(image_dir, vid, start, num):
         #   frames = []
@@ -143,7 +142,8 @@ class A3D(data_utl.Dataset):
             imgs = self.load_rgb_frames(self.root, vid, start, end)
         else:
             imgs = self.load_flow_frames(self.root, vid, start, end)
-        return imgs, torch.from_numpy(label), vid, start, end
+        imgs, label = self.transforms(imgs, label)
+        return imgs, label, vid, start, end
 
     def __len__(self):
         return len(self.data)
