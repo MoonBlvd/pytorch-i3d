@@ -10,22 +10,14 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.optim import lr_scheduler
 from torch.autograd import Variable
-from torch.utils.data import DataLoader
-
-import torchvision
-from torchvision import datasets, transforms
-import videotransforms
-import videotransforms as T
-
+from datasets.build import make_dataloader
 import numpy as np
-
 from pytorch_i3d import InceptionI3d
 
 # from charades_dataset import Charades as Dataset
 from tqdm import tqdm
-from A3D import A3D as Dataset
 from model_serialization import load_state_dict
-from build_samplers import make_data_sampler, make_batch_data_sampler
+
 import pdb
 
 def do_train(i3d, train_dataloader, val_dataloader, checkpoint_peroid=1000, save_model=''):
@@ -130,39 +122,6 @@ def do_val(i3d, val_dataloader):
         tot_cls_loss/(iters+1), 
         tot_loss/(iters+1)))                
             
-def make_dataloader(root, split, mode='rgb', phase='train', max_iters=None, batch_per_gpu=1, num_workers=0, shuffle=True, distributed=False):
-    
-
-    if phase == 'train':
-        transforms = T.Compose([T.Resize(min_size=(240,), max_size=320),
-                                T.RandomHorizontalFlip(p=0.5),
-                                T.ToTensor(),
-                                T.Normalize(mean=None, std=None, to_bgr255=False)])
-    elif phase in ['val', 'test']:
-        transforms = T.Compose([T.Resize(min_size=(240,), max_size=320),
-                                T.ToTensor(),
-                                T.Normalize(mean=None, std=None, to_bgr255=False)])
-    else:
-        raise NameError()
-    dataset = Dataset(split, 
-                      phase, 
-                      root, 
-                      mode, 
-                      transforms, 
-                      )
-    
-    sampler = make_data_sampler(dataset, shuffle=shuffle, distributed=distributed)
-    batch_sampler = make_batch_data_sampler(dataset, 
-                                            sampler, 
-                                            aspect_grouping=False, 
-                                            batch_per_gpu=batch_per_gpu,
-                                            max_iters=max_iters, 
-                                            start_iter=0, 
-                                            dataset_name='A3D')
-    dataloader =  DataLoader(dataset, 
-                            num_workers=num_workers, 
-                            batch_sampler=batch_sampler)
-    return dataloader
 
 def run(init_lr=0.1, max_steps=64e3, mode='rgb', root='/ssd/Charades_v1_rgb', train_split='charades/charades.json', batch_size=8*5, save_model=''):
     # setup dataset

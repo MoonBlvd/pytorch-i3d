@@ -29,15 +29,15 @@ class A3D(data_utl.Dataset):
     '''
     A3D dataset for I3D
     '''
-    def __init__(self, split_file, split, root, mode, transforms=None, horizontal_flip=None, save_dir=''):
+    def __init__(self, split_file, split, root, mode, transforms=None, horizontal_flip=None, save_dir='', seq_len=16, overlap=0):
         
         self.split_file = split_file
         self.transforms = transforms
         self.mode = mode
         self.root = root
         self.save_dir = save_dir
-        self.seq_len = 16
-        self.overlap = 0
+        self.seq_len = seq_len
+        self.overlap = overlap
         self.fps = 10
         self.num_classes = 11
 

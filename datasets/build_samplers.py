@@ -1,5 +1,5 @@
 import torch
-import samplers
+from . import samplers
 
 def make_data_sampler(dataset, shuffle, distributed):
     if distributed:
