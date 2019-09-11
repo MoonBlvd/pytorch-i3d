@@ -1,6 +1,8 @@
 import sys
 import argparse
+import os 
 
+import json
 import numpy as np
 import torch
 import torch.nn as nn
@@ -14,12 +16,15 @@ from pytorch_i3d import InceptionI3d
 
 from tqdm import tqdm
 from model_serialization import load_state_dict
-# from build_sam
+
 import pdb
 
 
-def do_test(mode='rgb', split=None, root='', checkpoint=''):
+def do_test(mode='rgb', split=None, root='', checkpoint='', save_dir=''):
     
+    if not os.path.isdir(save_dir):
+        os.makedirs(save_dir)
+
     # setup dataloader
     test_dataloader = make_dataloader(root,
                                      split, 
@@ -89,6 +94,7 @@ def do_test(mode='rgb', split=None, root='', checkpoint=''):
                             result = {}
                             result['segment'] = [i] # append start of the segment
                             result['label'] = int(cls)
+                            result['score'] = float(scores[i])
                         elif i + 1 == len(classes):
                             result['segment'].append(i+1) # append end of the segment
                             results[vid].append(result)
@@ -96,8 +102,7 @@ def do_test(mode='rgb', split=None, root='', checkpoint=''):
                         prev_cls = cls   
                 
                     all_scores = {}
-                    # pdb.set_trace()
-
+                    
             seq_scores = F.sigmoid(per_frame_logits)
             for i in range(seq_scores.shape[-1]):
                 frame_id = int(start.squeeze()) + i
@@ -106,17 +111,21 @@ def do_test(mode='rgb', split=None, root='', checkpoint=''):
                 else:
                     all_scores[frame_id] = [seq_scores[..., i]]
             prev_vid = vid
-
+        if idx > 20:
+            break
     pdb.set_trace()
+    save_file = os.path.join(save_dir, 'predictions.json')
+    json.dump(results, open(save_file,'w'))
 
 if __name__=='__main__':
     '''run test on untrimed video'''
     parser = argparse.ArgumentParser()
-    parser.add_argument('-mode', type=str, help='rgb or flow')
-    parser.add_argument('-checkpoint', type=str)
-    parser.add_argument('-root', type=str)
+    parser.add_argument('--mode','-m', type=str, help='rgb or flow')
+    parser.add_argument('--checkpoint', '-c', type=str)
+    parser.add_argument('--root', '-r', type=str)
     parser.add_argument('-split', type=str)
+    parser.add_argument('--save_dir', '-s', type=str, help="path to save the prediction results")
     args = parser.parse_args()
 
     # need to add argparse
-    do_test(mode=args.mode, split=args.split, root=args.root, checkpoint=args.checkpoint)
+    do_test(mode=args.mode, split=args.split, root=args.root, checkpoint=args.checkpoint, save_dir=args.save_dir)
