@@ -49,6 +49,7 @@ class A3D(data_utl.Dataset):
         with open(split_file, 'r') as f:
             data = json.load(f)
 
+
         for vid in data.keys():
             if not data[vid]['video_start']:
                 # NOTE: Sep 5, Some videos may have null video_start, meaning there is a bug and we skip the video for now
@@ -86,6 +87,7 @@ class A3D(data_utl.Dataset):
             
             # if mode == 'flow':
             #     num_frames = num_frames//2
+        print(len(dataset) ) 
         return dataset
 
     def load_rgb_frames(self, image_dir, vid, start, end):

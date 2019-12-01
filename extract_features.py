@@ -37,19 +37,20 @@ def run(max_steps=64e3,
                                  T.Normalize(mean=None, std=None, to_bgr255=False)])
 
     dataset = Dataset(split, 
-                      'training', 
+                      'val', 
                       root, 
                       mode, 
                       test_transforms, 
                       save_dir=save_dir)
+
     dataloader = DataLoader(dataset, 
                             batch_size=batch_size, 
                             shuffle=True, 
                             num_workers=0, 
                             pin_memory=True)
 
-    dataloaders = {'train': dataloader}
-    datasets = {'train': dataset}
+    dataloaders = {'val': dataloader}
+    datasets = {'val': dataset}
 
     # val_dataset = Dataset(split, 
     #                       'testing', 
@@ -75,7 +76,8 @@ def run(max_steps=64e3,
     load_state_dict(i3d, torch.load(load_model), ignored_prefix='logits')
     i3d.cuda()
 
-    for phase in ['train', 'val']:
+    # for phase in ['train', 'val']:
+    for phase in ['val']:
         i3d.eval()  # Set model to evaluate mode
                 
         tot_loss = 0.0
