@@ -1,11 +1,16 @@
 import torch
 from . import samplers
 
-def make_data_sampler(dataset, shuffle, distributed):
+def make_data_sampler(dataset, shuffle, distributed, is_train=True):
+    # Only do weighted sampling for training
     if distributed:
-        return samplers.DistributedSampler(dataset, shuffle=shuffle)
+        if is_train:
+            return samplers.DistributedWeightedSampler(dataset, shuffle=shuffle)
+        else:
+            return samplers.DistributedSampler(dataset, shuffle=shuffle)
     if shuffle:
-        sampler = torch.utils.data.sampler.RandomSampler(dataset)
+        # sampler = torch.utils.data.sampler.RandomSampler(dataset)
+        sampler = torch.utils.data.sampler.WeightedRandomSampler(dataset.weights, num_samples=len(dataset))
     else:
         sampler = torch.utils.data.sampler.SequentialSampler(dataset)
     return sampler
