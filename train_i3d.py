@@ -79,7 +79,7 @@ def do_train(model,
              distributed=False,
              evaluator=None):
 
-    lr = 0.001 #init_lr
+    lr = 0.003 #init_lr
     optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=0.0000001)
     # NOTE: maybe the weight decay is too soon?
     lr_sched = optim.lr_scheduler.MultiStepLR(optimizer, [24000, 32000])#[2000,10000])#[300, 1000])
@@ -116,7 +116,6 @@ def do_train(model,
         labels = Variable(labels.to(device))
 
         per_frame_logits = model(inputs) # B X C X T X H X W
-        pdb.set_trace()
         per_frame_logits = per_frame_logits.mean(dim=-1) # B X C
         # # upsample to input size
         # per_frame_logits = F.interpolate(per_frame_logits, t, mode='linear', align_corners=True)
@@ -204,8 +203,9 @@ def do_val(model, val_dataloader, device, distributed=False,logger=None, output_
     if logger is None:
         logger = logging.getLogger("I3D.trainer")
 
-    if distributed:
-        model = model.module
+    # if distributed:
+    #     model = model.module
+
     torch.cuda.empty_cache()  # TODO check if it helps
 
     tot_loss = 0.0
@@ -270,14 +270,11 @@ def do_val(model, val_dataloader, device, distributed=False,logger=None, output_
 
     # Run video-level evaluation
     eval_results = evaluator.evaluate(results)
-    print(eval_results)
     for k, v in eval_results.items():
         logger.info('{}:{}'.format(k, v))
         if isinstance(v, (float, int)) and hasattr(logger, 'log_values'):
             logger.log_values(eval_results, step=train_iters)
     
-    # logger.info("AC_top_1: {}   AC_top_3:{}".format(AC_top_1, AC_top_3))
-
 def _accumulate_from_multiple_gpus(item_per_gpu):
     # all_keys
     all_items = all_gather(item_per_gpu)
@@ -355,6 +352,7 @@ def run(init_lr=0.1,
                                      shuffle=False, 
                                      distributed=distributed,
                                      with_normal=with_normal)
+
     evaluator = ActionClassificationEvaluator(cfg=None,
                                               dataset=val_dataloader.dataset,
                                               split='val',
@@ -365,10 +363,10 @@ def run(init_lr=0.1,
     # set  dropout_keep_prob=0.0 for overfit
     if mode == 'flow':
         i3d = InceptionI3d(train_dataloader.dataset.num_classes, in_channels=2, dropout_keep_prob=0.5)
-        load_state_dict(i3d, torch.load('models/flow_imagenet.pt'), ignored_prefix='logits')
+        # load_state_dict(i3d, torch.load('models/flow_imagenet.pt'), ignored_prefix='logits')
     else:
         i3d = InceptionI3d(train_dataloader.dataset.num_classes, in_channels=3, dropout_keep_prob=0.5)
-        load_state_dict(i3d, torch.load('models/rgb_imagenet.pt'), ignored_prefix='logits')
+        # load_state_dict(i3d, torch.load('models/rgb_imagenet.pt'), ignored_prefix='logits')
 
     i3d.replace_logits(train_dataloader.dataset.num_classes)
 
