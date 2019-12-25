@@ -43,7 +43,7 @@ class A3D(data_utl.Dataset):
         self.seq_len = seq_len
         self.overlap = overlap
         self.fps = 10
-        self.num_classes = 10 # 9 known anomay type plus a normal, 0 is normal
+        self.num_classes = 19 # 18 known anomay type plus a normal, 0 is normal
         self.with_normal = with_normal
         
         self.name_to_id = {'normal': 0,
@@ -69,6 +69,8 @@ class A3D(data_utl.Dataset):
         self.valid_videos = []
 
         sample_category_stats = {v:0 for v in self.name_to_id.values()}
+
+        self.video_level_classes = {}
         for idx, vid in enumerate(data.keys()):
             
             if data[vid]['video_start'] is None or \
@@ -85,12 +87,15 @@ class A3D(data_utl.Dataset):
                 # skip unknown
                 continue
             num_frames = data[vid]['num_frames']
-            # if num_frames < self.seq_len:
-            #     continue
-            # print("Videos:", vid)
+            
             self.valid_videos.append(vid)
             
             assert int(data[vid]['anomaly_class']) > 0
+            
+            class_id = int(data[vid]['anomaly_class'])
+            
+            self.video_level_classes[vid] = {'class_id':class_id}
+
             n_skip = 0
             if self.with_normal:
                 start = 0
@@ -98,7 +103,7 @@ class A3D(data_utl.Dataset):
             else:
                 start = data[vid]['anomaly_start']
                 end = data[vid]['anomaly_end']            
-            for t in range(start, end):
+            for t in range(start, end, self.seq_len-self.overlap):
                 seq_start = t - self.seq_len/2 
                 seq_end = t + self.seq_len/2 
                                 
@@ -107,8 +112,8 @@ class A3D(data_utl.Dataset):
 
                 # NOTE: method 1, assign the label of the middle frame
                 if t >= data[vid]['anomaly_start'] and t < data[vid]['anomaly_end']:
-                    label[int(data[vid]['anomaly_class'])] = 1 # abnormal
-                    sample_category_stats[int(data[vid]['anomaly_class'])] += 1
+                    label[class_id] = 1 # abnormal, ego involve classes
+                    sample_category_stats[class_id] += 1
                 else:
                     # #NOTE: skip some normal
                     # if n_skip < 8:
@@ -119,18 +124,25 @@ class A3D(data_utl.Dataset):
                     sample_category_stats[0] += 1
                 
                 dataset.append({"vid": vid, 
+                                "label_id": class_id,
                                 "label": label, 
                                 "start": int(seq_start), # NOTE: 0-index
                                 "end": int(seq_end),# NOTE: 0-index
                                 "num_frames": num_frames
-                                # "image_dir": 
                                 })
             
-            # # # NOTE: for over fitting on 10 videos
-            # if idx >=9:
+            # # NOTE: for over fitting on 10 videos
+            # if idx >=1:
             #     break
         print("======== Number of samples of all categories ========")
         [print('{}:{}'.format(self.id_to_name[k], v)) for k, v in sample_category_stats.items()]
+
+
+        category_weights = {k:1/counts for k, counts in sample_category_stats.items() if counts>0}
+        self.weights = []
+        for sample in dataset:
+            self.weights.append(category_weights[sample['label_id']])
+
         return dataset
 
     def load_rgb_frames(self, image_dir, vid, start, end, num_frames):
@@ -153,8 +165,6 @@ class A3D(data_utl.Dataset):
             frames.append(frames[-1])
         return frames 
     
-
-
     def __getitem__(self, index):
         """
         Args:

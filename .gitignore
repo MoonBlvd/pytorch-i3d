@@ -2,4 +2,5 @@ __pycache__/
 A3D_features/
 checkpoints/
 *.log
-
+wandb/
+debug_trash/

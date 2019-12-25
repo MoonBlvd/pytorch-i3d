@@ -24,12 +24,12 @@ class Compose(object):
         return format_string
 
 class Resize(object):
-    def __init__(self, min_size, max_size):
+    def __init__(self, min_size=None, max_size=None, enforced_size=None):
         if not isinstance(min_size, (list, tuple)):
             min_size = (min_size,)
         self.min_size = min_size
         self.max_size = max_size
-
+        self.enforced_size = enforced_size
     # modified from torchvision to add support for max size
     def get_size(self, image_size):
         w, h = image_size
@@ -58,9 +58,13 @@ class Resize(object):
         images: a list of PIL Image object 
 
         '''
-        size = self.get_size(images[0].size)
-        for i, img in enumerate(images):
-            images[i] = F.resize(img, size)
+        if self.enforced_size is None:
+            size = self.get_size(images[0].size)
+            for i, img in enumerate(images):
+                images[i] = F.resize(img, size)
+        else:
+            for i, img in enumerate(images):
+                images[i] = img.resize(self.enforced_size)
 
         return images, labels
 
@@ -76,7 +80,8 @@ class Normalize(object):
     def __call__(self, image, labels):
         if self.to_bgr255:
             image = image[[2, 1, 0]] * 255
-        # image = F.normalize(image, mean=self.mean, std=self.std)
+        if self.mean is not None and self.std is not None:
+            image = F.normalize(image, mean=self.mean, std=self.std)
         image = image*2 - 1
         return image, labels
 

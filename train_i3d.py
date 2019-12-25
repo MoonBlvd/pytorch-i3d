@@ -20,13 +20,14 @@ import torch.distributed as dist
 from datasets.build import make_dataloader
 import numpy as np
 from pytorch_i3d import InceptionI3d
+from torchvision.models.video import r3d_18, mc3_18, r2plus1d_18
+from pytorch_c3d import C3D
 
 # from charades_dataset import Charades as Dataset
 from tqdm import tqdm
 from model_serialization import load_state_dict
 from detection.utils.logger import Logger
 from detection.utils.metric_logger import MetricLogger
-
 
 from mpi4py import MPI
 import apex
@@ -69,6 +70,13 @@ def reduce_loss_dict(loss_dict):
         reduced_losses = {k: v for k, v in zip(loss_names, all_losses)}
     return reduced_losses
 
+def loss_func(pred, target):
+    # sigmoid
+    # bce_loss = F.binary_cross_entropy_with_logits(pred, target)
+    # softmax
+    ce_loss = F.cross_entropy(pred, target)
+    return ce_loss
+
 def do_train(model, 
              train_dataloader, 
              val_dataloader, 
@@ -82,13 +90,11 @@ def do_train(model,
     lr = 0.003 #init_lr
     optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=0.0000001)
     # NOTE: maybe the weight decay is too soon?
-    lr_sched = optim.lr_scheduler.MultiStepLR(optimizer, [24000, 32000])#[2000,10000])#[300, 1000])
+    lr_sched = optim.lr_scheduler.MultiStepLR(optimizer, [2000, 3000])
 
     num_steps_per_update = 1 #4 # accum gradient
     steps = 0
-    if not os.path.isdir(save_model):
-        os.makedirs(save_model)
-    
+
     tot_loss = 0.0
     tot_loc_loss = 0.0
     tot_cls_loss = 0.0
@@ -109,28 +115,17 @@ def do_train(model,
 
         # get the inputs
         inputs, labels, video_names, _, _ = data
-        
         # wrap them in Variable
         inputs = Variable(inputs.to(device))
         t = inputs.size(2)
         labels = Variable(labels.to(device))
-
-        per_frame_logits = model(inputs) # B X C X T X H X W
-        per_frame_logits = per_frame_logits.mean(dim=-1) # B X C
-        # # upsample to input size
-        # per_frame_logits = F.interpolate(per_frame_logits, t, mode='linear', align_corners=True)
         
-        # compute localization loss
-        # loc_loss = F.binary_cross_entropy_with_logits(per_frame_logits, labels)
-
-        # compute classification loss (with max-pooling along time B x C x T)
-        # cls_loss = F.binary_cross_entropy_with_logits(torch.max(per_frame_logits, dim=2)[0], torch.max(labels, dim=2)[0])
-    
-        # loss = (0.5*loc_loss + 0.5*cls_loss)/num_steps_per_update
-
-        cls_loss = F.binary_cross_entropy_with_logits(per_frame_logits, labels)
+        per_frame_logits = model(inputs) # B X C X T X H X W
+        
+        if len(per_frame_logits.shape) == 3:
+            per_frame_logits = per_frame_logits.mean(dim=-1) # B X C
+        cls_loss = loss_func(per_frame_logits, labels)
         loss = cls_loss
-
         # track time
         batch_time = time.time() - end
         end = time.time()
@@ -140,7 +135,7 @@ def do_train(model,
         losses_reduced = loss_dict_reduced['loss_cls'] #0.5 * loss_dict_reduced['loss_loc'] + 0.5 * loss_dict_reduced['loss_cls']
 
         loss.backward()
-        grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 50)
+        grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 5)
 
         meters.update(loss=losses_reduced, **loss_dict_reduced)
         meters.update(time=batch_time, data=data_time)
@@ -192,6 +187,9 @@ def do_train(model,
                        evaluator=evaluator)
                 model.train()
                 
+                if not os.path.isdir(save_model):
+                    os.makedirs(save_model)
+    
                 save_dir = os.path.join(save_model, str(steps).zfill(6)+'.pt')
                 if hasattr(model, 'module'):
                     torch.save(model.module.state_dict(), save_dir)
@@ -224,20 +222,10 @@ def do_val(model, val_dataloader, device, distributed=False,logger=None, output_
         labels = labels.to(device)
 
         per_frame_logits = model(inputs)
-        per_frame_logits = per_frame_logits.mean(dim=-1)
+        if len(per_frame_logits.shape) == 3:
+            per_frame_logits = per_frame_logits.mean(dim=-1)
 
-        # # upsample to input size
-        # per_frame_logits = F.interpolate(per_frame_logits, t, mode='linear', align_corners=True)
-
-        # # compute localization loss
-        # loc_loss = F.binary_cross_entropy_with_logits(per_frame_logits, labels)
-        # loc_loss = loc_loss.item()
-        # tot_loc_loss += loc_loss
-
-        # compute classification loss (with max-pooling along time B x C x T)
-        # cls_loss = F.binary_cross_entropy_with_logits(torch.max(per_frame_logits, dim=2)[0], torch.max(labels, dim=2)[0])
-
-        cls_loss = F.binary_cross_entropy_with_logits(per_frame_logits, labels)
+        cls_loss = loss_func(per_frame_logits, labels)
         cls_loss = cls_loss.item()
         tot_cls_loss += cls_loss
 
@@ -286,7 +274,8 @@ def _accumulate_from_multiple_gpus(item_per_gpu):
         predictions.update(p)
     return predictions
 
-def run(init_lr=0.1, 
+def run(model_name='i3d',
+        init_lr=0.1, 
         max_steps=64e3, 
         mode='rgb', 
         root='/home/data/vision7/A3D_2.0/frames/', #'/ssd/Charades_v1_rgb', 
@@ -323,19 +312,19 @@ def run(init_lr=0.1,
                     project = 'i3d_a3d',
                     viz_backend="wandb" if args.use_wandb else "tensorboardx"
                     )
-    save_model = os.path.join(save_model, logger.run_id)
 
     logger.info("Using {} GPUs".format(num_gpus))
     # setup dataset
+
     train_dataloader = make_dataloader(root,
                                        train_split, 
                                        mode,
                                        seq_len=16, #64,
                                        overlap=15, #32,
                                        phase='train', 
-                                       max_iters=40000, 
-                                       batch_per_gpu=16,
-                                       num_workers=4, 
+                                       max_iters=5000, 
+                                       batch_per_gpu=12,#16,
+                                       num_workers=16, 
                                        shuffle=True, 
                                        distributed=distributed,
                                        with_normal=with_normal)
@@ -347,36 +336,50 @@ def run(init_lr=0.1,
                                      overlap=15, #32,
                                      phase='val', 
                                      max_iters=None, 
-                                     batch_per_gpu=16,#16,
-                                     num_workers=4, 
+                                     batch_per_gpu=12,#16,
+                                     num_workers=16, 
                                      shuffle=False, 
                                      distributed=distributed,
                                      with_normal=with_normal)
 
+    # setup the model
+    # set  dropout_keep_prob=0.0 for overfit
+    logger.info("Running {} model".format(model_name))
+    if model_name == 'i3d':
+        if mode == 'flow':
+            model = InceptionI3d(train_dataloader.dataset.num_classes, in_channels=2, dropout_keep_prob=0.5)
+            # load_state_dict(model, torch.load('models/flow_imagenet.pt'), ignored_prefix='logits')
+        else:
+            model = InceptionI3d(train_dataloader.dataset.num_classes, in_channels=3, dropout_keep_prob=0.5)
+            # load_state_dict(model, torch.load('models/rgb_imagenet.pt'), ignored_prefix='logits')
+        model.replace_logits(train_dataloader.dataset.num_classes)
+    elif model_name == 'r3d_18':
+        model = r3d_18(pretrained=False, num_classes=train_dataloader.dataset.num_classes)
+    elif model_name == 'mc3_18':
+        model = mc3_18(pretrained=False, num_classes=train_dataloader.dataset.num_classes)
+    elif model_name == 'r2plus1d_18':
+        model = r2plus1d_18(pretrained=False, num_classes=train_dataloader.dataset.num_classes)
+    elif model_name == 'c3d':
+        model = C3D(pretrained=False, num_classes=train_dataloader.dataset.num_classes)
+    else:
+        raise NameError('unknown model name:{}'.format(model_name))
+    save_model = os.path.join(save_model, model_name, logger.run_id)
+
+    # Create evaluator
     evaluator = ActionClassificationEvaluator(cfg=None,
                                               dataset=val_dataloader.dataset,
                                               split='val',
                                               mode='accuracy',#'mAP',
                                               output_dir=save_model,
                                               with_normal=with_normal)
-    # setup the model
-    # set  dropout_keep_prob=0.0 for overfit
-    if mode == 'flow':
-        i3d = InceptionI3d(train_dataloader.dataset.num_classes, in_channels=2, dropout_keep_prob=0.5)
-        # load_state_dict(i3d, torch.load('models/flow_imagenet.pt'), ignored_prefix='logits')
-    else:
-        i3d = InceptionI3d(train_dataloader.dataset.num_classes, in_channels=3, dropout_keep_prob=0.5)
-        # load_state_dict(i3d, torch.load('models/rgb_imagenet.pt'), ignored_prefix='logits')
-
-    i3d.replace_logits(train_dataloader.dataset.num_classes)
 
     device = torch.device('cuda')
-    i3d.to(device)
+    model.to(device)
     if distributed:
-        i3d = apex.parallel.convert_syncbn_model(i3d)
-        i3d = DDP(i3d.cuda(), delay_allreduce=True)
+        model = apex.parallel.convert_syncbn_model(model)
+        model = DDP(model.cuda(), delay_allreduce=True)
 
-    do_train(i3d, 
+    do_train(model, 
              train_dataloader, 
              val_dataloader, 
              device=device,
@@ -387,6 +390,7 @@ def run(init_lr=0.1,
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
+    parser.add_argument('-model_name', type=str, help='name of the model to run')
     parser.add_argument('-mode', type=str, help='rgb or flow')
     parser.add_argument('-save_model', type=str)
     parser.add_argument('-root', type=str)
@@ -396,11 +400,12 @@ if __name__ == '__main__':
     args = parser.parse_args()
     
     # need to add argparse
-    run(mode=args.mode, 
+    run(model_name=args.model_name,
+        mode=args.mode, 
         train_split=args.train_split, 
         val_split=args.val_split, 
         root=args.root, 
         save_model=args.save_model, 
-        checkpoint_peroid=2000,
+        checkpoint_peroid=500,
         with_normal=False
         )

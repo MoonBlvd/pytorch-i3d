@@ -3,25 +3,39 @@ from torch.utils.data import DataLoader
 
 # from .A3D import A3D as Dataset
 # from .A3D import A3DBinary as Dataset
-# from .A3D_new import A3D as Dataset
+# from .A3D_9_classes import A3D as Dataset
 from .A3D_18_classes import A3D as Dataset
 from . import videotransforms as T
 from .build_samplers import make_data_sampler, make_batch_data_sampler
 import pdb
 
-def make_dataloader(root, split, mode='rgb', phase='train', max_iters=None, batch_per_gpu=1, num_workers=0, shuffle=True, distributed=False,seq_len=16, overlap=0, with_normal=True):
+def make_dataloader(root, 
+                    split, 
+                    mode='rgb', 
+                    phase='train', 
+                    max_iters=None, 
+                    batch_per_gpu=1, 
+                    num_workers=0, 
+                    shuffle=True, 
+                    distributed=False,
+                    seq_len=16, 
+                    overlap=0, 
+                    with_normal=True,
+                    pixel_mean=None,
+                    pixel_std=None):
     
-
     if phase == 'train':
-        transforms = T.Compose([T.Resize(min_size=(240,), max_size=320),
+        transforms = T.Compose([#T.Resize(min_size=(240,), max_size=320),
                                 # T.RandomHorizontalFlip(p=0.5),
+                                T.Resize(enforced_size=(224, 224)),
                                 T.ToTensor(),
-                                T.Normalize(mean=None, std=None, to_bgr255=False)])
+                                T.Normalize(mean=pixel_mean, std=pixel_std, to_bgr255=False)])
         is_train = True
     elif phase in ['val', 'test']:
-        transforms = T.Compose([T.Resize(min_size=(240,), max_size=320),
+        transforms = T.Compose([# T.Resize(min_size=(240,), max_size=320),
+                                T.Resize(enforced_size=(224, 224)),
                                 T.ToTensor(),
-                                T.Normalize(mean=None, std=None, to_bgr255=False)])
+                                T.Normalize(mean=pixel_mean, std=pixel_std, to_bgr255=False)])
         is_train = False
     else:
         raise NameError()

@@ -42,7 +42,10 @@ class A3D(data_utl.Dataset):
         self.save_dir = save_dir
         self.seq_len = seq_len
         self.overlap = overlap
-        self.fps = 10
+        self.fps = 5 # original fps is 10
+        assert self.fps <= 10
+        self.down_sample_rate = int(10/self.fps)
+
         self.num_classes = 19 # 18 known anomay type plus a normal, 0 is normal
         self.with_normal = with_normal
         
@@ -117,9 +120,9 @@ class A3D(data_utl.Dataset):
             else:
                 start = data[vid]['anomaly_start']
                 end = data[vid]['anomaly_end']            
-            for t in range(start, end, self.seq_len-self.overlap):
-                seq_start = t - self.seq_len/2 
-                seq_end = t + self.seq_len/2 
+            for t in range(start, end, (self.seq_len-self.overlap) * self.down_sample_rate):
+                seq_start = t - (self.seq_len/2) * self.down_sample_rate
+                seq_end = t + (self.seq_len/2) * self.down_sample_rate
                                 
                 # NOTE: for original I3D, one clip has only one label
                 label = np.zeros(self.num_classes, np.float32) 
@@ -129,17 +132,12 @@ class A3D(data_utl.Dataset):
                     label[class_id] = 1 # abnormal, ego involve classes
                     sample_category_stats[class_id] += 1
                 else:
-                    # #NOTE: skip some normal
-                    # if n_skip < 8:
-                    #     n_skip += 1
-                    #     continue
-                    # n_skip = 0
                     label[0] = 1 # normal 
                     sample_category_stats[0] += 1
                 
                 dataset.append({"vid": vid, 
                                 "label_id": class_id,
-                                "label": label, 
+                                "label": np.array(class_id), #label, # NOTE: use label for BCEloss, use class_id for CEloss
                                 "start": int(seq_start), # NOTE: 0-index
                                 "end": int(seq_end),# NOTE: 0-index
                                 "num_frames": num_frames
@@ -164,7 +162,7 @@ class A3D(data_utl.Dataset):
         frames = []
         pad_front = 0
         pad_end = 0
-        for i in range(start, end):
+        for i in range(start, end, self.down_sample_rate):
             if i < 0 :
                 pad_front += 1
                 continue
