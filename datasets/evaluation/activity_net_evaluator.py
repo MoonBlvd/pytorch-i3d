@@ -22,7 +22,6 @@ class ANETdetection(object):
                  tiou_thresholds=np.linspace(0.5, 0.95, 10), 
                  subset='validation', verbose=False, 
                  check_status=True,
-                 toy_dataset=None,
                  with_normal=True):
         if not ground_truth_filename:
             raise IOError('Please input a valid ground truth file.')
@@ -42,7 +41,7 @@ class ANETdetection(object):
             self.blocked_videos = list()
         # Import ground truth and predictions.
         self.ground_truth, self.activity_index = self._import_ground_truth(
-            ground_truth_filename, toy_dataset, with_normal)
+            ground_truth_filename, with_normal)
         
         self.prediction = self._import_prediction(prediction_filename)
         
@@ -54,7 +53,7 @@ class ANETdetection(object):
             print(('\tNumber of predictions: {}'.format(nr_pred)))
             print(('\tFixed threshold for tiou score: {}'.format(self.tiou_thresholds)))
 
-    def _import_ground_truth(self, ground_truth_filename, toy_dataset=None, with_normal=True):
+    def _import_ground_truth(self, ground_truth_filename, with_normal=True):
         """
         NOTE: Sep 9, Modified to A3D dataset format
 

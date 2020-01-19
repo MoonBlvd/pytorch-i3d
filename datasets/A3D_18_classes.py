@@ -33,7 +33,13 @@ class A3D(data_utl.Dataset):
                  split_file, 
                  split, 
                  root, 
-                 mode, transforms=None, horizontal_flip=None, save_dir='', seq_len=16, overlap=0, with_normal=True):
+                 mode, 
+                 transforms=None, 
+                 horizontal_flip=None, 
+                 save_dir='', 
+                 seq_len=16, 
+                 overlap=0, 
+                 with_normal=True):
         
         self.split_file = split_file
         self.transforms = transforms
@@ -46,7 +52,7 @@ class A3D(data_utl.Dataset):
         assert self.fps <= 10
         self.down_sample_rate = int(10/self.fps)
 
-        self.num_classes = 19 # 18 known anomay type plus a normal, 0 is normal
+        self.num_classes = 17 # 16 known anomay type plus a normal, 0 is normal
         self.with_normal = with_normal
         
         self.name_to_id = {'normal': 0,
@@ -58,18 +64,21 @@ class A3D(data_utl.Dataset):
                             'ego: pedestrian': 6, 
                             'ego: obstacle': 7, 
                             'ego: leave_to_right': 8, 
-                            'ego: leave_to_left': 9, 
-                            'other: start_stop_or_stationary': 10, 
-                            'other: moving_ahead_or_waiting': 11, 
-                            'other: lateral': 12, 
-                            'other: oncoming': 13, 
-                            'other: turning': 14, 
-                            'other: pedestrian': 15, 
-                            'other: obstacle': 16, 
-                            'other: leave_to_right': 17, 
-                            'other: leave_to_left': 18, 
-                            'unknown': 19}
+                            'ego: leave_to_left': 8, # NOTE: Jan 18, merge leave right/left as out-of-control
+                            'other: start_stop_or_stationary': 9, 
+                            'other: moving_ahead_or_waiting': 10, 
+                            'other: lateral': 11, 
+                            'other: oncoming': 12, 
+                            'other: turning': 13, 
+                            'other: pedestrian': 14, 
+                            'other: obstacle': 15, 
+                            'other: leave_to_right': 16, 
+                            'other: leave_to_left': 16, 
+                            'ego: unknown': 17,
+                            'other: unknown': 18}
         self.id_to_name = {v:k for k, v in self.name_to_id.items()}
+        self.id_to_name[8] = 'ego: out_of_control'
+        self.id_to_name[16] = 'other: out_of_control'
 
         self.data = self.make_dataset(split_file, split, root, mode)
         print("Number of used video:", len(self.data))
@@ -78,51 +87,28 @@ class A3D(data_utl.Dataset):
         dataset = []
         with open(split_file, 'r') as f:
             data = json.load(f)
-        self.valid_videos = []
 
         sample_category_stats = {v:0 for v in self.name_to_id.values()}
 
         self.video_level_classes = {}
         for idx, vid in enumerate(data.keys()):
-            
-            if data[vid]['video_start'] is None or \
-               data[vid]['video_start'] is None or \
-               data[vid]['anomaly_start'] is None or \
-               data[vid]['anomaly_end'] is None:
-                # NOTE: Sep 5, Some videos may have null video_start, meaning there is a bug and we skip the video for now
-                continue
-            # if data[vid]['subset'] != split:
-            #     continue
-            if not os.path.exists(os.path.join(root, vid)):
-                continue
-            if int(data[vid]['anomaly_class']) == 10:
+            if 'unknown' in data[vid]['anomaly_class']:
                 # skip unknown
                 continue
             num_frames = data[vid]['num_frames']
-            # if num_frames < self.seq_len:
-            #     continue
-            # print("Videos:", vid)
-            self.valid_videos.append(vid)
-            
-            assert int(data[vid]['anomaly_class']) > 0
-            
-            if data[vid]['ego_involve']:
-                class_id = int(data[vid]['anomaly_class'])
-            else:
-                class_id = int(data[vid]['anomaly_class']) + 9
-            
-            self.video_level_classes[vid] = {'class_id':class_id}
+            class_id = self.name_to_id[data[vid]['anomaly_class']]
+            self.video_level_classes[vid] = {'class_id': class_id}
 
-            n_skip = 0
             if self.with_normal:
                 start = 0
                 end = num_frames
             else:
                 start = data[vid]['anomaly_start']
-                end = data[vid]['anomaly_end']            
+                end = data[vid]['anomaly_end']    
+
             for t in range(start, end, (self.seq_len-self.overlap) * self.down_sample_rate):
-                seq_start = t - (self.seq_len/2) * self.down_sample_rate
-                seq_end = t + (self.seq_len/2) * self.down_sample_rate
+                seq_start = int(t - (self.seq_len/2) * self.down_sample_rate)
+                seq_end = int(t + (self.seq_len/2) * self.down_sample_rate)
                                 
                 # NOTE: for original I3D, one clip has only one label
                 label = np.zeros(self.num_classes, np.float32) 
@@ -138,15 +124,11 @@ class A3D(data_utl.Dataset):
                 dataset.append({"vid": vid, 
                                 "label_id": class_id,
                                 "label": np.array(class_id), #label, # NOTE: use label for BCEloss, use class_id for CEloss
-                                "start": int(seq_start), # NOTE: 0-index
-                                "end": int(seq_end),# NOTE: 0-index
+                                "seq_start": seq_start, # NOTE: 0-index
+                                "seq_end": seq_end,# NOTE: 0-index
                                 "num_frames": num_frames
-                                # "image_dir": 
                                 })
-            
-            # # NOTE: for over fitting on 10 videos
-            # if idx >=1:
-            #     break
+
         print("======== Number of samples of all categories ========")
         [print('{}:{}'.format(self.id_to_name[k], v)) for k, v in sample_category_stats.items()]
 
@@ -189,8 +171,8 @@ class A3D(data_utl.Dataset):
         data = self.data[index]
         vid = data["vid"]
         label = data["label"]
-        start = data["start"]
-        end = data["end"]
+        start = data["seq_start"]
+        end = data["seq_end"]
 
         if os.path.exists(os.path.join(self.save_dir, vid+'.npy')):
             return 0, 0, vid

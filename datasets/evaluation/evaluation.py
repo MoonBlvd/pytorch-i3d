@@ -19,13 +19,10 @@ class ActionClassificationEvaluator():
 
         # get per video GT
         self.gt = json.load(open(self.anno_file, 'r'))
-        self.valid_videos = dataset.valid_videos
 
         self.output_dir = output_dir
 
         # a list of video names that belong to a toy_dataset, otherwise None
-        self.toy_dataset = dataset.valid_videos
-
         self.gt_video_classes = dataset.video_level_classes
 
         self.num_classes = dataset.num_classes
@@ -33,7 +30,6 @@ class ActionClassificationEvaluator():
         '''
         pred: dict of frame level prediction of all test or val videos
         '''
-        # assert len(self.valid_videos) != len(pred)
         eval_results = {}
         if self.mode == 'mAP':
             self.frame_level_mAP(pred)
@@ -83,7 +79,6 @@ class ActionClassificationEvaluator():
                                             subset=self.split,
                                             verbose=False,
                                             check_status=False,
-                                            toy_dataset=self.toy_dataset,
                                             with_normal=self.with_normal)
         self.map_evaluator.evaluate()
         return
@@ -100,11 +95,9 @@ class ActionClassificationEvaluator():
         if self.with_normal:
             per_class_correct_pred[0] = 0
             per_class_num_gt[0] = 0
-            
         for vid, prediction in predictions.items():
             gt_cls = int(self.gt_video_classes[vid]['class_id'])
             for frame_id, pred in prediction.items():
-                # sorted_score, sorted_cls_id = v.mean(dim=-1).sigmoid().sort(descending=True)
                 sorted_score, sorted_cls_id = pred.softmax(dim=-1).sort(descending=True)
                 top_1 = sorted_cls_id[:1].tolist()
                 top_3 = sorted_cls_id[:3].tolist()

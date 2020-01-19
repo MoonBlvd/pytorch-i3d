@@ -1,6 +1,6 @@
 import os
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"   
-os.environ["CUDA_VISIBLE_DEVICES"]='0,1,2,3'
+os.environ["CUDA_VISIBLE_DEVICES"]='1, 3'
 import sys
 import argparse
 import logging
@@ -95,7 +95,6 @@ def do_train(model,
     num_steps_per_update = 1 #4 # accum gradient
     steps = 0
 
-    tot_loss = 0.0
     tot_loc_loss = 0.0
     tot_cls_loss = 0.0
 
@@ -120,17 +119,16 @@ def do_train(model,
         t = inputs.size(2)
         labels = Variable(labels.to(device))
         
-        per_frame_logits = model(inputs) # B X C X T X H X W
-        
+        per_frame_logits = model(inputs) # inputs: B X C X T X H X W
         if len(per_frame_logits.shape) == 3:
             per_frame_logits = per_frame_logits.mean(dim=-1) # B X C
-        cls_loss = loss_func(per_frame_logits, labels)
-        loss = cls_loss
+
+        loss = loss_func(per_frame_logits, labels)
         # track time
         batch_time = time.time() - end
         end = time.time()
         # reduce losses over all GPUs for logging purposes
-        loss_dict = {"loss_cls": cls_loss} #{"loss_loc": loc_loss, "loss_cls": cls_loss}
+        loss_dict = {"loss_cls": loss} #{"loss_loc": loc_loss, "loss_cls": cls_loss}
         loss_dict_reduced = reduce_loss_dict(loss_dict)
         losses_reduced = loss_dict_reduced['loss_cls'] #0.5 * loss_dict_reduced['loss_loc'] + 0.5 * loss_dict_reduced['loss_cls']
 
@@ -206,7 +204,6 @@ def do_val(model, val_dataloader, device, distributed=False,logger=None, output_
 
     torch.cuda.empty_cache()  # TODO check if it helps
 
-    tot_loss = 0.0
     tot_loc_loss = 0.0
     tot_cls_loss = 0.0
     
@@ -225,12 +222,9 @@ def do_val(model, val_dataloader, device, distributed=False,logger=None, output_
         if len(per_frame_logits.shape) == 3:
             per_frame_logits = per_frame_logits.mean(dim=-1)
 
-        cls_loss = loss_func(per_frame_logits, labels)
-        cls_loss = cls_loss.item()
-        tot_cls_loss += cls_loss
-
-        loss = cls_loss #(0.5*loc_loss + 0.5*cls_loss)
-        tot_loss += loss
+        loss = loss_func(per_frame_logits, labels)
+        loss = loss.item() #(0.5*loc_loss + 0.5*cls_loss)
+        tot_cls_loss += loss
         # collect results
         per_frame_logits = per_frame_logits.detach().cpu()
         for batch_id, vid in enumerate(video_names):
@@ -241,10 +235,7 @@ def do_val(model, val_dataloader, device, distributed=False,logger=None, output_
                 results[vid] = {}
             assert frame_id not in results[vid]
             results[vid][frame_id] = pred
-            # if vid in results:
-            #     results[vid] = torch.cat([results[vid], pred], dim=0)
-            # else:
-            #     results[vid] = []
+            
     if hasattr(logger, 'log_values'):
         logger.log_values({"loss_cls_val": tot_cls_loss/(iters+1)}, step=train_iters)   
 
@@ -282,7 +273,6 @@ def run(model_name='i3d',
         train_split='A3D_2.0_train.json', #'charades/charades.json', 
         val_split='A3D_2.0_val.json',
         checkpoint_peroid=1000,
-        batch_size=8*5, 
         save_model='',
         with_normal=True):
 
@@ -319,11 +309,12 @@ def run(model_name='i3d',
     train_dataloader = make_dataloader(root,
                                        train_split, 
                                        mode,
+                                       model_name,
                                        seq_len=16, #64,
                                        overlap=15, #32,
                                        phase='train', 
                                        max_iters=5000, 
-                                       batch_per_gpu=12,#16,
+                                       batch_per_gpu=16,
                                        num_workers=16, 
                                        shuffle=True, 
                                        distributed=distributed,
@@ -332,11 +323,12 @@ def run(model_name='i3d',
     val_dataloader = make_dataloader(root,
                                      val_split, 
                                      mode,
+                                     model_name,
                                      seq_len=16, #64, 
                                      overlap=15, #32,
                                      phase='val', 
                                      max_iters=None, 
-                                     batch_per_gpu=12,#16,
+                                     batch_per_gpu=16,
                                      num_workers=16, 
                                      shuffle=False, 
                                      distributed=distributed,
