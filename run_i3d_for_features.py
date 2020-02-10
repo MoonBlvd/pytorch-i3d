@@ -1,6 +1,6 @@
 import os
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"   
-os.environ["CUDA_VISIBLE_DEVICES"]='2'
+os.environ["CUDA_VISIBLE_DEVICES"]='0, 1'
 import sys
 import argparse
 import logging
@@ -62,7 +62,6 @@ def inference(model,
         t = inputs.size(2)
 
         # get feature
-        # pdb.set_trace()
         per_frame_feature = model(inputs, extract_features=True)
         per_frame_feature = per_frame_feature.squeeze().detach().cpu()
         # collect features
@@ -158,7 +157,7 @@ def main(model_name,
     else:
         raise NameError('unknown model name:{}'.format(model_name))
 
-    pdb.set_trace()
+    #pdb.set_trace()
     for param in model.parameters():
         pass
     
@@ -168,10 +167,10 @@ def main(model_name,
         model = apex.parallel.convert_syncbn_model(model)
         model = DDP(model.cuda(), delay_allreduce=True)
     load_state_dict(model, torch.load(ckpt))
-    pdb.set_trace()
+    #pdb.set_trace()
     for param in model.parameters():
         pass
-    output_dir = os.path.join('/home/data/vision7/A3D_2.0/vac_features/', model_name+'.pth')
+    output_dir = os.path.join('/mnt/workspace/datasets/A3D_2.0/vac_features/', model_name+'.pth')
     inference(model, 
               val_dataloader, 
               device, 
