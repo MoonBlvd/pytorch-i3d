@@ -1,6 +1,6 @@
 import os
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"   
-os.environ["CUDA_VISIBLE_DEVICES"]='2'
+os.environ["CUDA_VISIBLE_DEVICES"]='0, 2'
 import sys
 import argparse
 import logging
@@ -70,7 +70,7 @@ def inference(model,
             results[vid].append(feature)
         # if iters > 5:
         #     break
-    # results = _accumulate_from_multiple_gpus(results)
+    results = _accumulate_from_multiple_gpus(results)
     
     if not is_main_process():
         return
@@ -156,12 +156,12 @@ def main(model_name,
     
     device = torch.device('cuda')
     model.to(device)
-    # if distributed:
-    #     model = apex.parallel.convert_syncbn_model(model)
-    #     model = DDP(model.cuda(), delay_allreduce=True)
-    # load_state_dict(model, torch.load(ckpt))
+    if distributed:
+        model = apex.parallel.convert_syncbn_model(model)
+        model = DDP(model.cuda(), delay_allreduce=True)
+    load_state_dict(model, torch.load(ckpt))
     
-    model.load_state_dict(torch.load(ckpt, map_location=device))
+    # model.load_state_dict(torch.load(ckpt, map_location=device))
     # pdb.set_trace()
     for param in model.parameters():
         pass
