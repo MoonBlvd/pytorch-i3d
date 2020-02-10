@@ -379,7 +379,21 @@ def run(model_name='i3d',
     if distributed:
         model = apex.parallel.convert_syncbn_model(model)
         model = DDP(model.cuda(), delay_allreduce=True)
+    ckpt = '/home/data/vision7/brianyao/DATA/i3d_outputs/i3d/tg9s4ff5/004500.pt'
+    load_state_dict(model, torch.load(ckpt))
 
+    # #######NOTE: only for testing checkpoint is correct or not ##
+    # model.eval()
+    # do_val(model, 
+    #         val_dataloader, 
+    #         device,
+    #         distributed, 
+    #         logger, 
+    #         output_dir=os.path.join(save_model, 'inference'),
+    #         train_iters=0,
+    #         evaluator=evaluator)
+    # pdb.set_trace()
+    # #########
     do_train(model, 
              train_dataloader, 
              val_dataloader, 

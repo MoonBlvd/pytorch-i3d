@@ -63,12 +63,14 @@ class C3D(nn.Module):
         x = self.relu(self.conv5b(x))
         x = self.pool5(x)
         x = x.view(-1, self.pool_output_size)
-        x = self.relu(self.fc6(x))
+        x = self.fc6(x)
+        if extract_features:
+            return x
+        x = self.relu(x)
         x = self.dropout(x)
         x = self.relu(self.fc7(x))
         x = self.dropout(x)
-        if extract_features:
-            return x
+        
         logits = self.fc8(x)
 
         return logits

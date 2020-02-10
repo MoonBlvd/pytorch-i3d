@@ -325,7 +325,7 @@ class InceptionI3d(nn.Module):
                 x = self._modules[end_point](x) # use _modules to work with dataparallel
         
         if extract_features:
-            return self.avg_pool(x)
+            return self.avg_pool(x) # 1024 x 1 x 1 x 1
         
         x = self.logits(self.dropout(self.avg_pool(x)))
         if self._spatial_squeeze:

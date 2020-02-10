@@ -1,11 +1,14 @@
 import os
 import torch
-import torch.utils.data as data_utl
-import json
+from torch.utils.data import Dataset, DataLoader
+from .build_samplers import make_data_sampler, make_batch_data_sampler
 
-class A3DClassifier(data_utl.Dataset):
+import json
+from tqdm import tqdm
+import pdb
+class A3DClassifierData(Dataset):
     def __init__(self, model='i3d', split='train'):
-        self.name_to_id = {'normal': 0,
+        self.name_to_id = {
                             'ego: start_stop_or_stationary': 1, 
                             'ego: moving_ahead_or_waiting': 2, 
                             'ego: lateral': 3, 
@@ -23,25 +26,36 @@ class A3DClassifier(data_utl.Dataset):
                             'other: pedestrian': 14, 
                             'other: obstacle': 15, 
                             'other: leave_to_right': 16, 
-                            'other: leave_to_left': 16, 
-                            'ego: unknown': 17,
-                            'other: unknown': 18}
+                            'other: leave_to_left': 16, }
+                            # 'ego: unknown': 17,
+                            # 'other: unknown': 18,
+                            # 'normal': 0,}
 
         anno_file = 'A3D_2.0_{}.json'.format(split)
 
         feature_root = '/home/data/vision7/A3D_2.0/vac_features/'
-        feature_file_name = '{}_{}.pth'.format(model, split)
+        feature_file_name = '{}_{}_per_frame.pth'.format(model, split)
         feature_file_name = os.path.join(feature_root, feature_file_name)
         features = torch.load(feature_file_name)
 
         annos = json.load(open(anno_file, 'r'))
         self.data_list = []
-        for vid, feat in tqdm(features):
+        for vid, feat in tqdm(features.items()):
             label = self.name_to_id[annos[vid]['anomaly_class']]
+            if isinstance(feat, list):
+                feat = torch.stack(feat, dim=0)
+            # avg pool
+            # feat = feat.mean(dim=0)
+            # try sum and normalize? 
+            import numpy.linalg as LA
+            feat = feat.sum(dim=0)
+            norm = LA.norm(feat)
+            feat /= norm
+            # pdb.set_trace()
             self.data_list.append([vid, feat, label])
     def __getitem__(self, index):
         vid, feat, label = self.data_list[index]
-
+        
         return feat, label
 
     def __len__(self):
@@ -59,7 +73,7 @@ def make_classifier_dataloader(model,
     else:
         split = 'val'
 
-    dataset = A3DClassifier(model=model, split=split)
+    dataset = A3DClassifierData(model=model, split=split)
 
     sampler = make_data_sampler(dataset, 
                                 shuffle=shuffle, 
@@ -76,3 +90,4 @@ def make_classifier_dataloader(model,
     dataloader =  DataLoader(dataset, 
                             num_workers=num_workers, 
                             batch_sampler=batch_sampler)
+    return dataloader

@@ -45,14 +45,7 @@ def inference(model,
               device, 
               output_dir=''):
     model.eval()
-    # if distributed:
-    #     model = model.module
 
-    torch.cuda.empty_cache()  # TODO check if it helps
-
-    tot_loc_loss = 0.0
-    tot_cls_loss = 0.0
-    
     # run on dataset
     results = defaultdict(list)
     for iters, data in enumerate(tqdm(val_dataloader)):
@@ -67,7 +60,7 @@ def inference(model,
         per_frame_feature = per_frame_feature.squeeze().detach().cpu()
         # collect features
         for batch_id, vid in enumerate(video_names):
-            frame_id = int((start[batch_id] + end[batch_id])/2)
+            # frame_id = int((start[batch_id] + end[batch_id])/2)
 
             feature = per_frame_feature[batch_id]
             # if vid not in results:
@@ -77,18 +70,17 @@ def inference(model,
             results[vid].append(feature)
         # if iters > 5:
         #     break
-    results = _accumulate_from_multiple_gpus(results)
+    # results = _accumulate_from_multiple_gpus(results)
     
     if not is_main_process():
         return
-    pdb.set_trace()
+    # pdb.set_trace()
     for vid in results.keys():
-        results[vid] = torch.stack(results[vid], dim=0).mean(dim=0)
-    
+        results[vid] = torch.stack(results[vid], dim=0)#.mean(dim=0)
     
     # if not os.path.exists(output_dir):
     #     os.makedirs(output_dir)
-    pdb.set_trace()
+    # pdb.set_trace()
     torch.save(results, output_dir)
 
 def _accumulate_from_multiple_gpus(item_per_gpu):
@@ -158,17 +150,19 @@ def main(model_name,
     else:
         raise NameError('unknown model name:{}'.format(model_name))
 
-    pdb.set_trace()
+    # pdb.set_trace()
     for param in model.parameters():
         pass
     
     device = torch.device('cuda')
     model.to(device)
-    if distributed:
-        model = apex.parallel.convert_syncbn_model(model)
-        model = DDP(model.cuda(), delay_allreduce=True)
-    load_state_dict(model, torch.load(ckpt))
-    pdb.set_trace()
+    # if distributed:
+    #     model = apex.parallel.convert_syncbn_model(model)
+    #     model = DDP(model.cuda(), delay_allreduce=True)
+    # load_state_dict(model, torch.load(ckpt))
+    
+    model.load_state_dict(torch.load(ckpt, map_location=device))
+    # pdb.set_trace()
     for param in model.parameters():
         pass
     output_dir = os.path.join('/home/data/vision7/A3D_2.0/vac_features/', model_name+'.pth')
