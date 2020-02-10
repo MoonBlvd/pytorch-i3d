@@ -76,6 +76,12 @@ class A3D(data_utl.Dataset):
                             'other: leave_to_left': 16, 
                             'ego: unknown': 17,
                             'other: unknown': 18}
+        # self.name_shorts = ['Normal', 'Ego: ST', 'Ego: AH', 'Ego: LA', 'Ego: OC', 
+        #                     'Ego: TC', 'Ego: VP', 'Ego: VO', 'Ego: LL/LR', 
+        #                     'Other: ST', 'Other: AH', 'Other: LA', 'Other: OC', 
+        #                     'Other: TC', 'Other: VP', 'Other: VO', 'Other: LL/LR']
+        self.name_shorts = [str(int(i)) for i in range(1, 17)]
+        assert len(self.name_shorts) == self.num_classes - 1
         self.id_to_name = {v:k for k, v in self.name_to_id.items()}
         self.id_to_name[8] = 'ego: out_of_control'
         self.id_to_name[16] = 'other: out_of_control'

@@ -1,6 +1,6 @@
 import os
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"   
-os.environ["CUDA_VISIBLE_DEVICES"]='1, 3'
+os.environ["CUDA_VISIBLE_DEVICES"]='0, 1, 2, 3'
 import sys
 import argparse
 import logging
@@ -28,6 +28,7 @@ from tqdm import tqdm
 from model_serialization import load_state_dict
 from detection.utils.logger import Logger
 from detection.utils.metric_logger import MetricLogger
+from detection.utils.comm import synchronize, get_rank
 
 from mpi4py import MPI
 import apex
@@ -36,6 +37,7 @@ from detection.utils.comm import get_world_size
 from detection.utils.comm import is_main_process, all_gather, synchronize
 
 from datasets.evaluation.evaluation import ActionClassificationEvaluator
+from sklearn.metrics import ConfusionMatrixDisplay
 
 import pdb
 
@@ -185,14 +187,15 @@ def do_train(model,
                        evaluator=evaluator)
                 model.train()
                 
-                if not os.path.isdir(save_model):
-                    os.makedirs(save_model)
-    
-                save_dir = os.path.join(save_model, str(steps).zfill(6)+'.pt')
-                if hasattr(model, 'module'):
-                    torch.save(model.module.state_dict(), save_dir)
-                else:
-                    torch.save(model.state_dict(), save_dir)
+                if get_rank() == 0: # only save model for rank0
+                    if not os.path.isdir(save_model):
+                        os.makedirs(save_model)
+        
+                    save_dir = os.path.join(save_model, str(steps).zfill(6)+'.pt')
+                    if hasattr(model, 'module'):
+                        torch.save(model.module.state_dict(), save_dir)
+                    else:
+                        torch.save(model.state_dict(), save_dir)
 
 
 def do_val(model, val_dataloader, device, distributed=False,logger=None, output_dir='', train_iters=0, evaluator=None):
@@ -253,7 +256,13 @@ def do_val(model, val_dataloader, device, distributed=False,logger=None, output_
         logger.info('{}:{}'.format(k, v))
         if isinstance(v, (float, int)) and hasattr(logger, 'log_values'):
             logger.log_values(eval_results, step=train_iters)
-    
+
+    if 'confusion_matrix' in eval_results:
+        cm_display = ConfusionMatrixDisplay(eval_results['confusion_matrix'], 
+                            display_labels=val_dataloader.dataset.name_shorts)
+        ret = cm_display.plot(fontsize=6)
+        logger.log_plot(ret.figure_, label='Confusion Matrix',step=train_iters)
+
 def _accumulate_from_multiple_gpus(item_per_gpu):
     # all_keys
     all_items = all_gather(item_per_gpu)
@@ -313,8 +322,8 @@ def run(model_name='i3d',
                                        seq_len=16, #64,
                                        overlap=15, #32,
                                        phase='train', 
-                                       max_iters=5000, 
-                                       batch_per_gpu=16,
+                                       max_iters=10000, 
+                                       batch_per_gpu=4, #8,
                                        num_workers=16, 
                                        shuffle=True, 
                                        distributed=distributed,
@@ -328,7 +337,7 @@ def run(model_name='i3d',
                                      overlap=15, #32,
                                      phase='val', 
                                      max_iters=None, 
-                                     batch_per_gpu=16,
+                                     batch_per_gpu=4, #8,
                                      num_workers=16, 
                                      shuffle=False, 
                                      distributed=distributed,

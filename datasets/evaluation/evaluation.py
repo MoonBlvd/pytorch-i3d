@@ -7,6 +7,7 @@ import json
 from .activity_net_evaluator import ANETdetection
 import pdb
 from collections import defaultdict
+
 class ActionClassificationEvaluator():
     '''evaluate action classification performance by'''
     def __init__(self, cfg, dataset, split='val', mode='accuracy', output_dir='', with_normal=True):
@@ -26,6 +27,7 @@ class ActionClassificationEvaluator():
         self.gt_video_classes = dataset.video_level_classes
 
         self.num_classes = dataset.num_classes
+
     def evaluate(self, pred):
         '''
         pred: dict of frame level prediction of all test or val videos
@@ -92,6 +94,8 @@ class ActionClassificationEvaluator():
         num_predictions = 0
         per_class_correct_pred = {i:0 for i in range(self.num_classes) if i  > 0}
         per_class_num_gt = {i:0 for i in range(self.num_classes) if i  > 0}
+        confusion_matrix = np.zeros((self.num_classes, self.num_classes))
+
         if self.with_normal:
             per_class_correct_pred[0] = 0
             per_class_num_gt[0] = 0
@@ -109,8 +113,12 @@ class ActionClassificationEvaluator():
                 num_predictions += 1
                 per_class_num_gt[gt_cls] += 1
 
+                confusion_matrix[gt_cls, sorted_cls_id[0]] += 1
+
         accuracy_top_1 = TP_top_1 / num_predictions
         accuracy_top_3 = TP_top_3 / num_predictions
+        confusion_matrix = confusion_matrix / np.sum(confusion_matrix, axis=1, keepdims=True)
+        confusion_matrix = np.around(confusion_matrix, decimals=2)
 
         per_class_accuracy = {}
         for class_id, num_correct_pred in per_class_correct_pred.items():
@@ -122,4 +130,5 @@ class ActionClassificationEvaluator():
         eval_result = {'Total accuracy top 1':accuracy_top_1,
                      'Total accuracy top 3':accuracy_top_3}
         eval_result.update(per_class_accuracy)
+        eval_result['confusion_matrix'] = confusion_matrix[1:, 1:] # ignore Normal
         return eval_result

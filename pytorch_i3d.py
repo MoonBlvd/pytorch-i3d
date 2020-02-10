@@ -319,11 +319,14 @@ class InceptionI3d(nn.Module):
         for k in self.end_points.keys():
             self.add_module(k, self.end_points[k])
         
-    def forward(self, x):
+    def forward(self, x, extract_features=False):
         for end_point in self.VALID_ENDPOINTS:
             if end_point in self.end_points:
                 x = self._modules[end_point](x) # use _modules to work with dataparallel
-
+        
+        if extract_features:
+            return self.avg_pool(x)
+        
         x = self.logits(self.dropout(self.avg_pool(x)))
         if self._spatial_squeeze:
             logits = x.squeeze(3).squeeze(3)

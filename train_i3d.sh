@@ -1,6 +1,6 @@
 #python train_i3d.py \
-mpirun -np 2 python train_i3d.py \
-    -model_name c3d \
+mpirun -np 4 python train_i3d.py \
+    -model_name r2plus1d_18 \
     -mode rgb \
     -save_model /home/data/vision7/brianyao/DATA/i3d_outputs/ \
     -root /home/data/vision7/A3D_2.0/frames/ \

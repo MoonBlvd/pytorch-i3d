@@ -43,7 +43,7 @@ class C3D(nn.Module):
         if pretrained:
             self.__load_pretrained_weights()
 
-    def forward(self, x):
+    def forward(self, x, extract_features=False):
 
         x = self.relu(self.conv1(x))
         x = self.pool1(x)
@@ -67,7 +67,8 @@ class C3D(nn.Module):
         x = self.dropout(x)
         x = self.relu(self.fc7(x))
         x = self.dropout(x)
-
+        if extract_features:
+            return x
         logits = self.fc8(x)
 
         return logits
