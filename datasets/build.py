@@ -4,7 +4,8 @@ from torch.utils.data import DataLoader
 # from .A3D import A3D as Dataset
 # from .A3D import A3DBinary as Dataset
 # from .A3D_9_classes import A3D as Dataset
-from .A3D_18_classes import A3D as Dataset
+# from .A3D_18_classes import A3D as Dataset
+from .A3D_16_classes import A3D as Dataset
 from . import videotransforms as T
 from .build_samplers import make_data_sampler, make_batch_data_sampler
 import pdb
@@ -24,14 +25,14 @@ def make_dataloader(root,
                     with_normal=True,
                     pixel_mean=None,
                     pixel_std=None):
-    if model_name == 'c3d':
+    if model_name != 'i3d':
         size = 112
     else:
         size = 224
     if phase == 'train':
         transforms = T.Compose([#T.Resize(min_size=(240,), max_size=320),
-                                # T.RandomHorizontalFlip(p=0.5),
                                 T.Resize(enforced_size=(size, size)),
+                                T.RandomHorizontalFlip(p=0.5),
                                 T.ToTensor(),
                                 T.Normalize(mean=pixel_mean, std=pixel_std, to_bgr255=False)])
         is_train = True

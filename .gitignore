@@ -4,3 +4,5 @@ checkpoints/
 *.log
 wandb/
 debug_trash/
+*.pth
+
