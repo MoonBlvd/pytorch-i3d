@@ -119,6 +119,11 @@ class A3D(data_utl.Dataset):
                 dataset.append([vid, class_id, start, end])
             else:
                 video_len = end - start
+                # # NOTE: just use early clips
+                # if video_len > 20:
+                #     end = start + int(video_len/2)
+                #     video_len = end - start
+                
                 delta = max([video_len - self.seq_len * self.down_sample_rate, 0])
                 
                 for clip_idx in range(self.num_clips):

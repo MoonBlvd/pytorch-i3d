@@ -202,7 +202,14 @@ def do_train(model,
                         torch.save(model.state_dict(), save_dir)
 
 
-def do_val(model, val_dataloader, device, distributed=False,logger=None, output_dir='', train_iters=0, evaluator=None):
+def do_val(model, 
+           val_dataloader, 
+           device, 
+           distributed=False,
+           logger=None, 
+           output_dir='', 
+           train_iters=0, 
+           evaluator=None):
     if logger is None:
         logger = logging.getLogger("I3D.trainer")
 
@@ -218,7 +225,6 @@ def do_val(model, val_dataloader, device, distributed=False,logger=None, output_
         # get the inputs
         # inputs, labels, video_names, start, end = data
         inputs, labels, video_names= data
-
         # wrap them in Variable
         inputs = inputs.to(device)
         t = inputs.size(2)
@@ -291,9 +297,11 @@ def do_val(model, val_dataloader, device, distributed=False,logger=None, output_
     per_clip_top_1_acc = per_clip_confusion_matrix.diagonal() / (per_clip_confusion_matrix.sum(axis=1) + 1e-6)
     per_clip_top_3_acc = np.array([num/per_class_clip_num[i] for i, num in enumerate(per_clip_top3_acc)])
     logger.info("Clip-level evalutaion:")
-    logger.info("Top 1 acc: {}, Top 3 acc: {}, per_cls_acc: {}".format(np.around(per_clip_top_1_acc.mean(), 3), 
+    per_clip_result = "Top 1 acc: {}, Top 3 acc: {}, per_cls_acc: {}".format(np.around(per_clip_top_1_acc.mean(), 3), 
                                                                        np.around(per_clip_top_3_acc.mean(), 3), 
-                                                                       np.around(per_clip_top_1_acc, 3)))
+                                                                       np.around(per_clip_top_1_acc, 3))
+    logger.info(per_clip_result)
+    print(per_clip_result)
     if hasattr(logger, 'log_values'):
         logger.log_values({'Per clip Top 1 Acc': per_clip_top_1_acc.mean()}, step=train_iters)
         logger.log_values({'Per clip Top 3 Acc': per_clip_top_3_acc.mean()}, step=train_iters)
@@ -303,9 +311,11 @@ def do_val(model, val_dataloader, device, distributed=False,logger=None, output_
     top_1_acc = per_vid_confusion_matrix.diagonal() / (per_vid_confusion_matrix.sum(axis=1) + 1e-6)
     top_3_acc = np.array([num/data_category_stats[i] for i, num in enumerate(per_vid_top3_acc)])
     logger.info("Video-level evalutaion:")
-    logger.info("Top 1 acc: {}, Top 3 acc: {}, per_cls_acc: {}".format(np.around(top_1_acc.mean(), 3), 
+    per_vid_result = "Top 1 acc: {}, Top 3 acc: {}, per_cls_acc: {}".format(np.around(top_1_acc.mean(), 3), 
                                                                        np.around(top_3_acc.mean(), 3), 
-                                                                       np.around(top_1_acc, 3)))
+                                                                       np.around(top_1_acc, 3))
+    logger.info(per_vid_result)
+    print(per_vid_result)
     if hasattr(logger, 'log_values'):
         logger.log_values({'Per vid Top 1 Acc': top_1_acc.mean()}, step=train_iters)
         logger.log_values({'Per vid Top 3 Acc': top_3_acc.mean()}, step=train_iters)
