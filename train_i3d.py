@@ -38,7 +38,7 @@ from detection.utils.comm import is_main_process, all_gather, synchronize
 
 from datasets.evaluation.evaluation import ActionClassificationEvaluator
 from sklearn.metrics import ConfusionMatrixDisplay
-
+import pickle as pkl
 import pdb
 
 np.set_printoptions(precision=3)
@@ -81,7 +81,8 @@ def loss_func(pred, target):
     ce_loss = F.cross_entropy(pred, target)
     return ce_loss
 
-def do_train(model, 
+def do_train(model_name,
+             model, 
              train_dataloader, 
              val_dataloader, 
              device,
@@ -124,7 +125,7 @@ def do_train(model,
         inputs = Variable(inputs.to(device))
         t = inputs.size(2)
         labels = Variable(labels.to(device))
-        
+        pdb.set_trace()
         per_frame_logits = model(inputs) # inputs: B X C X T X H X W
         if len(per_frame_logits.shape) == 3:
             per_frame_logits = per_frame_logits.mean(dim=-1) # B X C
@@ -181,7 +182,8 @@ def do_train(model,
             if steps % checkpoint_peroid == 0:
                 del inputs, loss
                 model.eval()
-                do_val(model, 
+                do_val(model_name,
+                       model, 
                        val_dataloader, 
                        device,
                        distributed, 
@@ -202,7 +204,8 @@ def do_train(model,
                         torch.save(model.state_dict(), save_dir)
 
 
-def do_val(model, 
+def do_val(model_name,
+           model, 
            val_dataloader, 
            device, 
            distributed=False,
@@ -266,6 +269,8 @@ def do_val(model,
     per_vid_top3_acc = np.zeros(16)
     per_clip_top3_acc = np.zeros(16)
     per_class_clip_num = np.zeros(16)
+    # Save per video prediction
+    all_per_vid_results = {}
     for vid in results.keys():
         # ----------
         # NOTE: add clip-level accuracy
@@ -284,6 +289,7 @@ def do_val(model,
         # ---------
         # per video results
         per_vid_results = torch.stack(results[vid], dim=0).mean(dim=0)
+        all_per_vid_results[vid] = per_vid_results
         _, sorted_pred = torch.sort(per_vid_results, descending=True)
         top1_pred = sorted_pred[0]
         top3_pred = sorted_pred[:3]
@@ -293,6 +299,9 @@ def do_val(model,
             per_vid_top3_acc[y_true] += 1
         # ---------
     
+    # Save per video prediction
+    pkl.dump(all_per_vid_results, open(os.path.join('/u/bryao/work/DATA/i3d_outputs', model_name, 'per_video_results.pkl'), 'wb'))
+
     # per clip results
     per_clip_top_1_acc = per_clip_confusion_matrix.diagonal() / (per_clip_confusion_matrix.sum(axis=1) + 1e-6)
     per_clip_top_3_acc = np.array([num/per_class_clip_num[i] for i, num in enumerate(per_clip_top3_acc)])
@@ -302,6 +311,8 @@ def do_val(model,
                                                                        np.around(per_clip_top_1_acc, 3))
     logger.info(per_clip_result)
     print(per_clip_result)
+    print("confusion matrix:", np.around(per_clip_confusion_matrix, 3))
+    # np.save('/u/bryao/work/DATA/i3d_outputs/r2plus1d_18/confusion_matrix_7000.npy', per_clip_confusion_matrix)
     if hasattr(logger, 'log_values'):
         logger.log_values({'Per clip Top 1 Acc': per_clip_top_1_acc.mean()}, step=train_iters)
         logger.log_values({'Per clip Top 3 Acc': per_clip_top_3_acc.mean()}, step=train_iters)
@@ -477,7 +488,8 @@ def run(model_name='i3d',
     #         evaluator=evaluator)
     # pdb.set_trace()
     # #########
-    do_train(model, 
+    do_train(model_name,
+             model, 
              train_dataloader, 
              val_dataloader, 
              device=device,
