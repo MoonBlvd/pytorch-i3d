@@ -55,7 +55,7 @@ python train_i3d.py \
     -root /home/data/vision7/A3D_2.0/frames/ \
     -train_split A3D_2.0_train.json \
     -val_split A3D_2.0_val.json \
-    -batch_per_gpu 12 \
-    -gpu 2 \
+    -batch_per_gpu 2 \
+    -gpu 3 \
     -checkpoint_peroid 500 \
     -use_wandb

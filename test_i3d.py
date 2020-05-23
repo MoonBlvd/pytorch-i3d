@@ -1,6 +1,6 @@
 import os
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"   
-os.environ["CUDA_VISIBLE_DEVICES"]='2'
+os.environ["CUDA_VISIBLE_DEVICES"]='0'
 import sys
 import argparse
 import logging
@@ -205,7 +205,8 @@ def main(ckpt,
     # do_test(i3d, dataloader, device, distributed=distributed,logger=logger, output_dir=save_dir, train_iters=0, evaluator=evaluator)
     model.to(device)
     model.eval()
-    do_val(model, 
+    do_val(model_name,
+            model, 
             dataloader, 
             device,
             distributed, 
