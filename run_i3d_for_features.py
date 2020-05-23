@@ -38,14 +38,58 @@ from detection.utils.comm import is_main_process, all_gather, synchronize
 
 from datasets.evaluation.evaluation import ActionClassificationEvaluator
 from sklearn.metrics import ConfusionMatrixDisplay
-
+import json
 import pdb
+name_to_id = {
+                'ego: start_stop_or_stationary': 1, 
+                'ego: moving_ahead_or_waiting': 2, 
+                'ego: lateral': 3, 
+                'ego: oncoming': 4, 
+                'ego: turning': 5, 
+                'ego: pedestrian': 6, 
+                'ego: obstacle': 7, 
+                'ego: leave_to_right': 8, 
+                'ego: leave_to_left': 8, # NOTE: Jan 18, merge leave right/left as out-of-control
+                'other: start_stop_or_stationary': 9, 
+                'other: moving_ahead_or_waiting': 10, 
+                'other: lateral': 11, 
+                'other: oncoming': 12, 
+                'other: turning': 13, 
+                'other: pedestrian': 14, 
+                'other: obstacle': 15, 
+                'other: leave_to_right': 16, 
+                'other: leave_to_left': 16, }
+def evaluate(all_pred):
+    '''
+    all_pred: a dict saving scores for each video
+    '''
+    confusion_matrix = np.zeros((17,17))
+    top_3_acc = np.zeros(17)
+    all_annos = json.load(open('/home/data/vision7/A3D_2.0/A3D_2.0_val.json', 'r'))
+    for vid, scores in all_pred.items():
+        scores = scores.mean(dim=0)
+        anomaly_cls = all_annos[vid]['anomaly_class']
+        label = name_to_id[anomaly_cls]
+        sorted_pred = torch.argsort(scores, descending=True)
+        top1_pred = sorted_pred[0]
+        confusion_matrix[label][top1_pred] += 1
+        # get top 3
+        if label in sorted_pred[:3]:
+            top_3_acc[label] += 1
+    acc = confusion_matrix.diagonal() / (confusion_matrix.sum(axis=1) + 1e-5)
+    top_3_acc = top_3_acc / (confusion_matrix.sum(axis=1) + 1e-5)
+    np.set_printoptions(formatter={'float': lambda x: "{0:0.4f}".format(x)})
+    print("Top 1 Accuracy: {} \t mean Top 1 Accuracy: {:.4f} \t \
+           Top 3 Accuracy: {} \t mean Top 3 Accuracy: {:.4f}".format(acc[1:], 
+                                                                    acc[1:].mean(),
+                                                                    top_3_acc[1:],
+                                                                    top_3_acc[1:].mean()))
 def inference(model, 
               val_dataloader, 
               device, 
               output_dir=''):
     model.eval()
-
+    extract_features = False
     # run on dataset
     results = defaultdict(list)
     for iters, data in enumerate(tqdm(val_dataloader)):
@@ -54,21 +98,23 @@ def inference(model,
         inputs = inputs.to(device)
         t = inputs.size(2)
 
-        # get feature
-        per_frame_feature = model(inputs, extract_features=True)
-        per_frame_feature = per_frame_feature.squeeze().detach().cpu()
-        # collect features
-        for batch_id, vid in enumerate(video_names):
-            # frame_id = int((start[batch_id] + end[batch_id])/2)
-
-            feature = per_frame_feature[batch_id]
-            # if vid not in results:
-            #     results[vid] = {}
-            # assert frame_id not in results[vid]
-            # results[vid][frame_id] = feature
-            results[vid].append(feature)
-        # if iters > 5:
-        #     break
+        # get features or results
+        # pdb.set_trace()
+        if extract_features:
+            per_frame_feature = model(inputs, extract_features=extract_features)
+            per_frame_feature = per_frame_feature.squeeze().detach().cpu()
+            # collect features
+            for batch_id, vid in enumerate(video_names):
+                feature = per_frame_feature[batch_id]
+                results[vid].append(feature)
+        else:
+            logits = model(inputs, extract_features=extract_features)
+            logits = logits.squeeze(-1).detach().cpu()
+            softmax_scores = F.softmax(logits, dim=1)
+            # collect scores
+            for batch_id, vid in enumerate(video_names):
+                scores = softmax_scores[batch_id]
+                results[vid].append(scores)
     results = _accumulate_from_multiple_gpus(results)
     
     if not is_main_process():
@@ -80,7 +126,9 @@ def inference(model,
     # if not os.path.exists(output_dir):
     #     os.makedirs(output_dir)
     # pdb.set_trace()
-    torch.save(results, output_dir)
+    # torch.save(results, output_dir)
+    if not extract_features:
+        evaluate(results)
 
 def _accumulate_from_multiple_gpus(item_per_gpu):
     # all_keys
@@ -123,7 +171,7 @@ def main(model_name,
                                         mode,
                                         model_name,
                                         seq_len=16, #64, 
-                                        overlap=15, #32,
+                                        overlap=8, #32,
                                         phase='val', 
                                         max_iters=None, 
                                         batch_per_gpu=batch_per_gpu,
@@ -158,7 +206,12 @@ def main(model_name,
     if distributed:
         model = apex.parallel.convert_syncbn_model(model)
         model = DDP(model.cuda(), delay_allreduce=True)
+<<<<<<< HEAD
     load_state_dict(model, torch.load(ckpt))
+=======
+    # load_state_dict(model, torch.load(ckpt))
+    model.load_state_dict(torch.load(ckpt, map_location=device))
+>>>>>>> 5ab1ce69e37a0c040ab682148e1642bcf749f984
     
     # model.load_state_dict(torch.load(ckpt, map_location=device))
     # pdb.set_trace()

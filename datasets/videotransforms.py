@@ -82,7 +82,8 @@ class Normalize(object):
             image = image[[2, 1, 0]] * 255
         if self.mean is not None and self.std is not None:
             image = F.normalize(image, mean=self.mean, std=self.std)
-        image = image*2 - 1
+        else:
+            image = image*2 - 1
         return image, labels
 
 class ToTensor(object):
@@ -92,7 +93,20 @@ class ToTensor(object):
         '''
         for i, img in enumerate(images):
             images[i] = F.to_tensor(img)
-        return torch.stack(images, dim=1), torch.from_numpy(labels)
+        if labels is not None:
+            labels = torch.from_numpy(labels)
+        return torch.stack(images, dim=1), labels
+
+class Crop(object):
+    def __call__(self, images, labels):
+        '''
+        images: list(PIL.Image)
+        '''
+        for i, img in enumerate(images):
+            images[i] = F.to_tensor(img)
+        if labels is not None:
+            labels = torch.from_numpy(labels)
+        return torch.stack(images, dim=1), labels
 
 class RandomCrop(object):
     """Crop the given video sequences (t x h x w) at a random location.
@@ -186,14 +200,14 @@ class RandomHorizontalFlip(object):
             seq Images: Randomly flipped seq images.
         """
         if random.random() < self.p:
-            # 8 - leave_to_right, 9 - leave_to_left
-            for t in range(labels.shape[1]):
-                if np.argmax(labels[:, t]) == 8:
-                    labels[8, t] = 0
-                    labels[9, t] = 1
-                elif np.argmax(labels[:, t]) == 9:
-                    labels[9, t] = 0
-                    labels[8, t] = 1
+            # # 8 - leave_to_right, 9 - leave_to_left
+            # for t in range(labels.shape[1]):
+            #     if np.argmax(labels[:, t]) == 8:
+            #         labels[8, t] = 0
+            #         labels[9, t] = 1
+            #     elif np.argmax(labels[:, t]) == 9:
+            #         labels[9, t] = 0
+            #         labels[8, t] = 1
             return [img.transpose(Image.FLIP_LEFT_RIGHT) for img in images], labels
         return images, labels
 

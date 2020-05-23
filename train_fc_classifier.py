@@ -42,7 +42,7 @@ def do_val(model, val_dataloader, iters=None):
     return acc, acc.mean()
 
 def do_train():
-    model_name = 'i3d'
+    model_name = 'c3d'
     input_size = {'i3d':1024, 'c3d':4096, 'r3d_18':512, 'mc3_18':512, 'r2plus1d_18':512}
     shuffle = True
     distributed = False

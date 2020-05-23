@@ -1,6 +1,6 @@
 import os
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"   
-os.environ["CUDA_VISIBLE_DEVICES"]='0, 1, 2, 3'
+os.environ["CUDA_VISIBLE_DEVICES"]= '0, 1, 2, 3'
 import sys
 import argparse
 import logging
@@ -40,6 +40,8 @@ from datasets.evaluation.evaluation import ActionClassificationEvaluator
 from sklearn.metrics import ConfusionMatrixDisplay
 
 import pdb
+
+np.set_printoptions(precision=3)
 
 def reduce_loss_dict(loss_dict):
     """
@@ -89,10 +91,10 @@ def do_train(model,
              distributed=False,
              evaluator=None):
 
-    lr = 0.003 #init_lr
+    lr = 0.01 #0.003 #init_lr
     optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=0.0000001)
     # NOTE: maybe the weight decay is too soon?
-    lr_sched = optim.lr_scheduler.MultiStepLR(optimizer, [2000, 3000])
+    lr_sched = optim.lr_scheduler.MultiStepLR(optimizer, [4000, 8000])
 
     num_steps_per_update = 1 #4 # accum gradient
     steps = 0
@@ -115,7 +117,9 @@ def do_train(model,
         iters += 1
 
         # get the inputs
-        inputs, labels, video_names, _, _ = data
+        # inputs, labels, video_names, _, _ = data
+        inputs, labels, video_names = data
+        
         # wrap them in Variable
         inputs = Variable(inputs.to(device))
         t = inputs.size(2)
@@ -169,10 +173,10 @@ def do_train(model,
                         memory=torch.cuda.max_memory_allocated() / 1024.0 / 1024.0,
                     )
                 ) 
-
-                for name, meter in meters.meters.items():
-                    logger.log_values({name: meter.median}, step=iters)
-                logger.log_values({"grad_norm": grad_norm}, step=iters)
+                if hasattr(logger, 'log_values'):
+                    for name, meter in meters.meters.items():
+                        logger.log_values({name: meter.median}, step=iters)
+                    logger.log_values({"grad_norm": grad_norm}, step=iters)
             
             if steps % checkpoint_peroid == 0:
                 del inputs, loss
@@ -198,12 +202,16 @@ def do_train(model,
                         torch.save(model.state_dict(), save_dir)
 
 
-def do_val(model, val_dataloader, device, distributed=False,logger=None, output_dir='', train_iters=0, evaluator=None):
+def do_val(model, 
+           val_dataloader, 
+           device, 
+           distributed=False,
+           logger=None, 
+           output_dir='', 
+           train_iters=0, 
+           evaluator=None):
     if logger is None:
         logger = logging.getLogger("I3D.trainer")
-
-    # if distributed:
-    #     model = model.module
 
     torch.cuda.empty_cache()  # TODO check if it helps
 
@@ -211,11 +219,12 @@ def do_val(model, val_dataloader, device, distributed=False,logger=None, output_
     tot_cls_loss = 0.0
     
     # run on dataset
-    results = {}
+    results = defaultdict(list)
+    target_labels = {}
     for iters, data in enumerate(tqdm(val_dataloader)):
         # get the inputs
-        inputs, labels, video_names, start, end = data
-        # print("inputs shape")
+        # inputs, labels, video_names, start, end = data
+        inputs, labels, video_names= data
         # wrap them in Variable
         inputs = inputs.to(device)
         t = inputs.size(2)
@@ -229,16 +238,18 @@ def do_val(model, val_dataloader, device, distributed=False,logger=None, output_
         loss = loss.item() #(0.5*loc_loss + 0.5*cls_loss)
         tot_cls_loss += loss
         # collect results
-        per_frame_logits = per_frame_logits.detach().cpu()
+        per_frame_logits = F.softmax(per_frame_logits, dim=1).detach().cpu()
         for batch_id, vid in enumerate(video_names):
-            frame_id = int((start[batch_id] + end[batch_id])/2)
-
+            # frame_id = int((start[batch_id] + end[batch_id])/2)
+            # pred = per_frame_logits[batch_id]
+            # if vid not in results:
+            #     results[vid] = {}
+            # assert frame_id not in results[vid]
+            # results[vid][frame_id] = pred
             pred = per_frame_logits[batch_id]
-            if vid not in results:
-                results[vid] = {}
-            assert frame_id not in results[vid]
-            results[vid][frame_id] = pred
-            
+            results[vid].append(pred)
+            target_labels[vid] = int(labels[batch_id].detach().cpu())
+
     if hasattr(logger, 'log_values'):
         logger.log_values({"loss_cls_val": tot_cls_loss/(iters+1)}, step=train_iters)   
 
@@ -248,20 +259,80 @@ def do_val(model, val_dataloader, device, distributed=False,logger=None, output_
 
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
-    torch.save(results, os.path.join(output_dir, 'predictions.pth'))
-
+    # torch.save(results, os.path.join(output_dir, 'predictions.pth'))
     # Run video-level evaluation
-    eval_results = evaluator.evaluate(results)
-    for k, v in eval_results.items():
-        logger.info('{}:{}'.format(k, v))
-        if isinstance(v, (float, int)) and hasattr(logger, 'log_values'):
-            logger.log_values(eval_results, step=train_iters)
+    per_vid_confusion_matrix = np.zeros((16, 16))
+    per_clip_confusion_matrix = np.zeros((16, 16))
+    per_vid_top3_acc = np.zeros(16)
+    per_clip_top3_acc = np.zeros(16)
+    per_class_clip_num = np.zeros(16)
+    for vid in results.keys():
+        # ----------
+        # NOTE: add clip-level accuracy
+        clip_results = torch.stack(results[vid], dim=0)
+        for per_clip_result in clip_results:
+            _, sorted_pred = torch.sort(per_clip_result, descending=True)
+            top1_pred = sorted_pred[0]
+            top3_pred = sorted_pred[:3]
+            y_true = target_labels[vid]
+            per_class_clip_num[y_true] += 1
+            per_clip_confusion_matrix[y_true, top1_pred] += 1
+            if y_true in top3_pred:
+                per_clip_top3_acc[y_true] += 1
+        # ---------
 
-    if 'confusion_matrix' in eval_results:
-        cm_display = ConfusionMatrixDisplay(eval_results['confusion_matrix'], 
-                            display_labels=val_dataloader.dataset.name_shorts)
-        ret = cm_display.plot(fontsize=6)
-        logger.log_plot(ret.figure_, label='Confusion Matrix',step=train_iters)
+        # ---------
+        # per video results
+        per_vid_results = torch.stack(results[vid], dim=0).mean(dim=0)
+        _, sorted_pred = torch.sort(per_vid_results, descending=True)
+        top1_pred = sorted_pred[0]
+        top3_pred = sorted_pred[:3]
+        y_true = target_labels[vid]
+        per_vid_confusion_matrix[y_true, top1_pred] += 1
+        if y_true in top3_pred:
+            per_vid_top3_acc[y_true] += 1
+        # ---------
+    
+    # per clip results
+    per_clip_top_1_acc = per_clip_confusion_matrix.diagonal() / (per_clip_confusion_matrix.sum(axis=1) + 1e-6)
+    per_clip_top_3_acc = np.array([num/per_class_clip_num[i] for i, num in enumerate(per_clip_top3_acc)])
+    logger.info("Clip-level evalutaion:")
+    per_clip_result = "Top 1 acc: {}, Top 3 acc: {}, per_cls_acc: {}".format(np.around(per_clip_top_1_acc.mean(), 3), 
+                                                                       np.around(per_clip_top_3_acc.mean(), 3), 
+                                                                       np.around(per_clip_top_1_acc, 3))
+    logger.info(per_clip_result)
+    print(per_clip_result)
+    if hasattr(logger, 'log_values'):
+        logger.log_values({'Per clip Top 1 Acc': per_clip_top_1_acc.mean()}, step=train_iters)
+        logger.log_values({'Per clip Top 3 Acc': per_clip_top_3_acc.mean()}, step=train_iters)
+
+    # per video results
+    data_category_stats = val_dataloader.dataset.data_category_stats
+    top_1_acc = per_vid_confusion_matrix.diagonal() / (per_vid_confusion_matrix.sum(axis=1) + 1e-6)
+    top_3_acc = np.array([num/data_category_stats[i] for i, num in enumerate(per_vid_top3_acc)])
+    logger.info("Video-level evalutaion:")
+    per_vid_result = "Top 1 acc: {}, Top 3 acc: {}, per_cls_acc: {}".format(np.around(top_1_acc.mean(), 3), 
+                                                                       np.around(top_3_acc.mean(), 3), 
+                                                                       np.around(top_1_acc, 3))
+    logger.info(per_vid_result)
+    print(per_vid_result)
+    if hasattr(logger, 'log_values'):
+        logger.log_values({'Per vid Top 1 Acc': top_1_acc.mean()}, step=train_iters)
+        logger.log_values({'Per vid Top 3 Acc': top_3_acc.mean()}, step=train_iters)
+
+
+    # # Run video-level evaluation
+    # eval_results = evaluator.evaluate(results)
+    # for k, v in eval_results.items():
+    #     logger.info('{}:{}'.format(k, v))
+    #     if isinstance(v, (float, int)) and hasattr(logger, 'log_values'):
+    #         logger.log_values(eval_results, step=train_iters)
+
+    # if 'confusion_matrix' in eval_results:
+    #     cm_display = ConfusionMatrixDisplay(eval_results['confusion_matrix'], 
+    #                         display_labels=val_dataloader.dataset.name_shorts)
+    #     ret = cm_display.plot(fontsize=6)
+    #     logger.log_plot(ret.figure_, label='Confusion Matrix',step=train_iters)
 
 def _accumulate_from_multiple_gpus(item_per_gpu):
     # all_keys
@@ -276,7 +347,9 @@ def _accumulate_from_multiple_gpus(item_per_gpu):
 
 def run(model_name='i3d',
         init_lr=0.1, 
+        gpu_id=0,
         max_steps=64e3, 
+        batch_per_gpu=4,
         mode='rgb', 
         root='/home/data/vision7/A3D_2.0/frames/', #'/ssd/Charades_v1_rgb', 
         train_split='A3D_2.0_train.json', #'charades/charades.json', 
@@ -306,11 +379,14 @@ def run(model_name='i3d',
         synchronize()
     # logger must be initialized after distributed!
     cfg = {'PROJECT': 'i3d_a3d'}
-    logger = Logger("I3D",
-                    cfg,#convert_to_dict(cfg, []),
-                    project = 'i3d_a3d',
-                    viz_backend="wandb" if args.use_wandb else "tensorboardx"
-                    )
+    if args.use_wandb:
+        logger = Logger("I3D",
+                        cfg,#convert_to_dict(cfg, []),
+                        project = 'i3d_a3d',
+                        viz_backend="wandb" 
+                        )
+    else:
+        logger = logging.Logger('I3D')
 
     logger.info("Using {} GPUs".format(num_gpus))
     # setup dataset
@@ -323,7 +399,7 @@ def run(model_name='i3d',
                                        overlap=15, #32,
                                        phase='train', 
                                        max_iters=10000, 
-                                       batch_per_gpu=4, #8,
+                                       batch_per_gpu=batch_per_gpu, #8,
                                        num_workers=16, 
                                        shuffle=True, 
                                        distributed=distributed,
@@ -337,34 +413,40 @@ def run(model_name='i3d',
                                      overlap=15, #32,
                                      phase='val', 
                                      max_iters=None, 
-                                     batch_per_gpu=4, #8,
+                                     batch_per_gpu=batch_per_gpu, #8,
                                      num_workers=16, 
                                      shuffle=False, 
                                      distributed=distributed,
                                      with_normal=with_normal)
-
     # setup the model
     # set  dropout_keep_prob=0.0 for overfit
     logger.info("Running {} model".format(model_name))
     if model_name == 'i3d':
         if mode == 'flow':
             model = InceptionI3d(train_dataloader.dataset.num_classes, in_channels=2, dropout_keep_prob=0.5)
-            # load_state_dict(model, torch.load('models/flow_imagenet.pt'), ignored_prefix='logits')
+            load_state_dict(model, torch.load('models/flow_imagenet.pt'), ignored_prefix='logits')
+            logger.info("Loaded pretrained I3D")
         else:
             model = InceptionI3d(train_dataloader.dataset.num_classes, in_channels=3, dropout_keep_prob=0.5)
-            # load_state_dict(model, torch.load('models/rgb_imagenet.pt'), ignored_prefix='logits')
+            load_state_dict(model, torch.load('models/rgb_imagenet.pt'), ignored_prefix='logits')
+            logger.info("Loaded pretrained I3D")
         model.replace_logits(train_dataloader.dataset.num_classes)
     elif model_name == 'r3d_18':
-        model = r3d_18(pretrained=False, num_classes=train_dataloader.dataset.num_classes)
+        model = r3d_18(pretrained=True, num_classes=train_dataloader.dataset.num_classes)
     elif model_name == 'mc3_18':
-        model = mc3_18(pretrained=False, num_classes=train_dataloader.dataset.num_classes)
+        model = mc3_18(pretrained=True, num_classes=train_dataloader.dataset.num_classes)
     elif model_name == 'r2plus1d_18':
-        model = r2plus1d_18(pretrained=False, num_classes=train_dataloader.dataset.num_classes)
+        model = r2plus1d_18(pretrained=True, num_classes=train_dataloader.dataset.num_classes)
     elif model_name == 'c3d':
-        model = C3D(pretrained=False, num_classes=train_dataloader.dataset.num_classes)
+        model = C3D(pretrained=True, num_classes=train_dataloader.dataset.num_classes)
     else:
         raise NameError('unknown model name:{}'.format(model_name))
-    save_model = os.path.join(save_model, model_name, logger.run_id)
+    if hasattr(logger, 'run_id'):
+        run_id = logger.run_id
+    else:
+        run_id = 'no_wandb'
+    
+    save_model = os.path.join(save_model, model_name, run_id)
 
     # Create evaluator
     evaluator = ActionClassificationEvaluator(cfg=None,
@@ -374,13 +456,14 @@ def run(model_name='i3d',
                                               output_dir=save_model,
                                               with_normal=with_normal)
 
-    device = torch.device('cuda')
+    # device = torch.device('cuda')
+    device = torch.device('cuda:{}'.format(gpu_id))
     model.to(device)
     if distributed:
         model = apex.parallel.convert_syncbn_model(model)
-        model = DDP(model.cuda(), delay_allreduce=True)
-    ckpt = '/home/data/vision7/brianyao/DATA/i3d_outputs/i3d/tg9s4ff5/004500.pt'
-    load_state_dict(model, torch.load(ckpt))
+        model = DDP(model.to(device), delay_allreduce=True)
+    # ckpt = '/home/data/vision7/brianyao/DATA/i3d_outputs/i3d/tg9s4ff5/004500.pt'
+    # load_state_dict(model, torch.load(ckpt))
 
     # #######NOTE: only for testing checkpoint is correct or not ##
     # model.eval()
@@ -411,16 +494,21 @@ if __name__ == '__main__':
     parser.add_argument('-root', type=str)
     parser.add_argument('-train_split', type=str)
     parser.add_argument('-val_split', type=str)
-    parser.add_argument('-use_wandb', type=bool, default=True)
+    parser.add_argument('-batch_per_gpu', type=int)
+    parser.add_argument('-gpu', type=int)
+    parser.add_argument('-checkpoint_peroid', type=int)
+    parser.add_argument('-use_wandb', const=True, nargs='?')
     args = parser.parse_args()
     
     # need to add argparse
     run(model_name=args.model_name,
         mode=args.mode, 
+        gpu_id=args.gpu,
+        batch_per_gpu=args.batch_per_gpu,
         train_split=args.train_split, 
         val_split=args.val_split, 
         root=args.root, 
         save_model=args.save_model, 
-        checkpoint_peroid=500,
+        checkpoint_peroid=args.checkpoint_peroid,
         with_normal=False
         )

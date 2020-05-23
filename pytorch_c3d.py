@@ -102,20 +102,22 @@ class C3D(nn.Module):
                          # Conv5b
                         "features.18.weight": "conv5b.weight",
                         "features.18.bias": "conv5b.bias",
-                        # fc6
-                        "classifier.0.weight": "fc6.weight",
-                        "classifier.0.bias": "fc6.bias",
-                        # fc7
-                        "classifier.3.weight": "fc7.weight",
-                        "classifier.3.bias": "fc7.bias",
+                        # # fc6
+                        # "classifier.0.weight": "fc6.weight",
+                        # "classifier.0.bias": "fc6.bias",
+                        # # fc7
+                        # "classifier.3.weight": "fc7.weight",
+                        # "classifier.3.bias": "fc7.bias",
                         }
 
-        p_dict = torch.load(Path.model_dir())
+        p_dict = torch.load('models/c3d-pretrained.pth')#Path.model_dir()
         s_dict = self.state_dict()
+        # pdb.set_trace()
         for name in p_dict:
             if name not in corresp_name:
                 continue
             s_dict[corresp_name[name]] = p_dict[name]
+        # pdb.set_trace()
         self.load_state_dict(s_dict)
 
     def __init_weight(self):
