@@ -120,20 +120,19 @@ def do_train(model_name,
         # get the inputs
         # inputs, labels, video_names, _, _ = data
         inputs, labels, video_names = data
-        
         # wrap them in Variable
         inputs = Variable(inputs.to(device))
         t = inputs.size(2)
         labels = Variable(labels.to(device))
-        pdb.set_trace()
         per_frame_logits = model(inputs) # inputs: B X C X T X H X W
+        # pdb.set_trace()
         if len(per_frame_logits.shape) == 3:
             per_frame_logits = per_frame_logits.mean(dim=-1) # B X C
 
         loss = loss_func(per_frame_logits, labels)
         # track time
         batch_time = time.time() - end
-        end = time.time()
+        
         # reduce losses over all GPUs for logging purposes
         loss_dict = {"loss_cls": loss} #{"loss_loc": loc_loss, "loss_cls": cls_loss}
         loss_dict_reduced = reduce_loss_dict(loss_dict)
@@ -155,10 +154,9 @@ def do_train(model_name,
             optimizer.zero_grad()
 
             lr_sched.step()
-            if steps % 20 == 0:
+            if steps % 1 == 0:
                 # NOTE: Add log file 
-                logger.info(
-                    meters.delimiter.join(
+                info = meters.delimiter.join(
                         [
                             "eta: {eta}",
                             "iter: {iter}",
@@ -173,11 +171,14 @@ def do_train(model_name,
                         lr=optimizer.param_groups[0]["lr"],
                         memory=torch.cuda.max_memory_allocated() / 1024.0 / 1024.0,
                     )
-                ) 
+                
                 if hasattr(logger, 'log_values'):
+                    logger.info(info) 
                     for name, meter in meters.meters.items():
                         logger.log_values({name: meter.median}, step=iters)
                     logger.log_values({"grad_norm": grad_norm}, step=iters)
+                else:
+                    print(info)
             
             if steps % checkpoint_peroid == 0:
                 del inputs, loss
@@ -203,7 +204,7 @@ def do_train(model_name,
                     else:
                         torch.save(model.state_dict(), save_dir)
 
-
+        end = time.time()
 def do_val(model_name,
            model, 
            val_dataloader, 

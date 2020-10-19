@@ -13,7 +13,7 @@ import os.path
 
 import cv2
 import pdb
-
+import time
 def video_to_tensor(pic):
     """Convert a ``numpy.ndarray`` to tensor.
     Converts a numpy.ndarray (T x H x W x C)
@@ -178,7 +178,9 @@ class A3D(data_utl.Dataset):
 
         vid, class_id, start, end = self.data[index]
         indices = self.get_frame_index(start,  end)
+        end = time.time()
         imgs = self.load_rgb_frames(self.root, vid, indices)
+        print("load image stack:{:.4}".format(time.time()-end))
         label = None
         imgs, label = self.transforms(imgs, label)
         return imgs, class_id, vid #imgs, label, vid, start, end
